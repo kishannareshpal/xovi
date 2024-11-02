@@ -22,6 +22,10 @@ struct LinkingPass1SOFunction {
     UT_hash_handle hh;
 };
 
+struct SemVer {
+    unsigned char major, minor, patch;
+};
+
 struct LinkingPass1Result {
     hash_t soFileNameRootHash;
     char loaded;
@@ -32,6 +36,8 @@ struct LinkingPass1Result {
     unsigned char *untrampolineFunctionCache;
     int populatedUntrampolineFunctions;
     int importsCount;
+
+    struct SemVer version;
 
     UT_hash_handle hh;
 };

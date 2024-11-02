@@ -31,6 +31,25 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
 
     char **LINKTABLENAMESptr = dlsym(extension, "LINKTABLENAMES");
     void **LINKTABLEVALUES = dlsym(extension, "LINKTABLEVALUES");
+    unsigned int *EXTENSIONVERSION = dlsym(extension, "EXTENSIONVERSION");
+
+    if(EXTENSIONVERSION == NULL) {
+        LOG("[W]: Pass 1: Extension doesn't define its version! Defaulting to 0.1.0.\n");
+        thisExtension->version.major = 0;
+        thisExtension->version.minor = 1;
+        thisExtension->version.patch = 0;
+    } else {
+        int version = *EXTENSIONVERSION;
+        thisExtension->version.major = (version >> 16) & 0xFF;
+        thisExtension->version.minor = (version >> 8) & 0xFF;
+        thisExtension->version.patch = version & 0xFF;
+        LOG(
+            "[I]: Pass 1: Extension version %d.%d.%d\n",
+            thisExtension->version.major,
+            thisExtension->version.minor,
+            thisExtension->version.patch
+        );
+    }
 
     if(LINKTABLENAMESptr && LINKTABLEVALUES){
         // Unprotect the memory to prepare it for modifying
@@ -184,19 +203,37 @@ static void defineOverride(char *extensionBaseName, char *symbolName, void *newA
     HASH_ADD_HT(OVERRIDEN_FUNCTIONS, overridenFunctionNameHash, function);
 }
 
-void requireExtension(hash_t hash, const char *nameFallback) {
+void requireExtension(hash_t hash, const char *nameFallback, unsigned char major, unsigned char minor, unsigned char patch) {
     struct LinkingPass1Result *soFile;
+    const char *thisExtName = nameFallback ? nameFallback : "<Not provided>";
 
-    LOG("[I]: Init: Initializing extension %s(%llx)...\n", nameFallback ? nameFallback : "<Not provided>", hash);
+    LOG("[I]: Init: Initializing extension %s(%llx)...\n", thisExtName, hash);
 
     HASH_FIND_HT(PASS1_RESULTS, &hash, soFile);
     if(soFile == NULL) {
         // There is no such extension
-        LOG("[F]: Init: Cannot load extension %s(%llx) - not found!\n", nameFallback ? nameFallback : "<Not provided>", hash);
+        LOG("[F]: Init: Cannot load extension %s(%llx) - not found!\n", thisExtName, hash);
         exit(1);
     }
+    if(!(major == 255 && minor == 255 && patch == 255)) {
+        // Needs to check version
+        if(
+            (major != soFile->version.major) ||
+            (major == soFile->version.major && minor > soFile->version.minor) ||
+            (major == soFile->version.major && minor == soFile->version.minor && patch > soFile->version.patch)
+        ) {
+            LOG(
+                "[F]: Init: Extension %s requires extension %s at version %d.%d.%d (or compatible). Version %d.%d.%d installed currently is not compatible!\n",
+                thisExtName,
+                soFile->baseName,
+                major, minor, patch,
+                soFile->version.major, soFile->version.minor, soFile->version.patch
+            );
+            exit(1);
+        }
+    }
     if(soFile->loaded){
-        LOG("[I]: Init: Loading %s(%llx) - skipped. Already loaded.\n", nameFallback ? nameFallback : "<Not provided>", hash);
+        LOG("[I]: Init: Loading %s(%llx) - skipped. Already loaded.\n", thisExtName, hash);
         return;
     }
 
@@ -204,9 +241,8 @@ void requireExtension(hash_t hash, const char *nameFallback) {
     soFile->loaded = 1;
 }
 
-void requireExtensionWithChecks(const char *name, unsigned int version) {
-    // TODO: Version check.
-    requireExtension(hashString((char *) name), name);
+void requireExtensionByName(const char *name, unsigned char major, unsigned char minor, unsigned char patch) {
+    requireExtension(hashString((char *) name), NULL, major, minor, patch);
 }
 
 // PASS 2:
@@ -291,14 +327,14 @@ void loadAllExtensions(struct XoViEnvironment *env){
     }
     LOG("[I]: Pass 2: Pass 2 complete. Linking is done.\n");
     LOG("[I]: Starting initialization...\n");
-    env->requireExtension = requireExtensionWithChecks;
+    env->requireExtension = requireExtensionByName;
 
     for(
         currentExtension = PASS1_RESULTS;
         currentExtension != NULL;
         currentExtension = currentExtension->hh.next
     ) {
-        requireExtension(currentExtension->soFileNameRootHash, currentExtension->baseName);
+        requireExtension(currentExtension->soFileNameRootHash, currentExtension->baseName, 255, 255, 255);
     }
     env->requireExtension = NULL;
     LOG("[I]: Init complete. There are %d extensions loaded.\n", count);

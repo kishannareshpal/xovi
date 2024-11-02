@@ -10,6 +10,7 @@ EXPORT = 1
 IMPORT = 2
 OVERRIDE = 3
 COPY = 4
+VERSION = 5
 
 @dataclass
 class Directive:
@@ -79,6 +80,8 @@ def parse_directives(directives):
                 out_directive = Directive(OVERRIDE, operand, current_file)
             case 'copy':
                 out_directive = Directive(COPY, operand, '')
+            case 'version':
+                out_directive = Directive(VERSION, operand, '')
         if out_directive:
             final_dirs[out_directive.file].append(out_directive)
     gl = final_dirs[""]
@@ -143,6 +146,23 @@ def process(root, outdir, dirtree):
                     final_out_nametable.append(f'O{directive.symbol}')
             write.write('extern const void *LINKTABLEVALUES[];\n')
             write.write(input_contents)
+    version_directives = [x for x in dirtree.global_directives if x.dir_type == VERSION]
+    if len(version_directives) > 1:
+        print("Warning: More than one version directive in the XOVI project file.")
+    if not version_directives:
+        print("Warning: No version defined in the XOVI project file.")
+        version = None
+    else:
+        version_string = version_directives[0].symbol
+        try:
+            version_tokens = [int(x) for x in version_string.strip().split('.')]
+            if len(version_tokens) != 3 or any(x > 255 or x < 0 for x in version_tokens):
+                raise BaseException("invalid format")
+        except BaseException:
+            print(f"Warning: Invalid version format {version_string}. Use major.minor.patch (semver). Assuming 0.1.0")
+            version_tokens = [0, 1, 0]
+        version = (version_tokens[0] << 16) | (version_tokens[1] << 8) | (version_tokens[2])
+
     with open(join(outdir, 'xovi.c'), 'w') as linktable:
         zero = '\\0'
         nl = '\n'
@@ -154,6 +174,8 @@ def process(root, outdir, dirtree):
         linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLENAMES = "{zero.join(final_out_nametable)}{zero}{zero}";{nl}""")
         linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLEVALUES[] = {{{', '.join(vartable)}}};{nl}""")
         linktable.write(f"""__attribute__((section(".xovi"))) const struct XoViEnvironment *Environment = 0;{nl}""")
+        if version is not None:
+            linktable.write(f"""__attribute__((section(".xovi_info"))) const int EXTENSIONVERSION = {version};{nl}""")
 
 def write_make_file(output_root, project_name, compiler, arguments, directives):
     with open(join(output_root, 'make.sh'), 'w') as out:
