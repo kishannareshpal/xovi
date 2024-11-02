@@ -1,0 +1,305 @@
+// Load all extensions the software depends on, but DO NOT LINK yet
+#include "dynamiclinker.h"
+#define HASH_ADD_HT(head, keyfield_name, item_ptr) HASH_ADD(hh, head, keyfield_name, sizeof(hash_t), item_ptr)
+#define HASH_FIND_HT(head, hash_ptr, out) HASH_FIND(hh, head, hash_ptr, sizeof(hash_t), out)
+
+static struct LinkingPass1Result *PASS1_RESULTS = NULL;
+static struct OverrideFunctionTrace *OVERRIDEN_FUNCTIONS = NULL;
+
+// baseName needs to be preallocated!
+void loadExtensionPass1(char *extensionSOFile, char *baseName){
+    LOG("[W]: Pass 1: Begin loading extension %s from file %s\n", baseName, extensionSOFile);
+    void *extension = dlopen(extensionSOFile, RTLD_NOW);
+    if(!extension) {
+        LOG("[F]: Pass 1: Couldn't load extension:\n%s\n", dlerror());
+        exit(1);
+    }
+    char (*shouldLoad)() = dlsym(extension, "_xovi_shouldLoad");
+    if(shouldLoad){
+        if(!shouldLoad()){
+            printf("[I]: Pass 1: The extension refused being loaded. Skipping.");
+            return;
+        }
+    }
+    // Traverse the link tables, load all functions and dependencies into PASS1_RESULTS
+    struct LinkingPass1Result *thisExtension = malloc(sizeof(struct LinkingPass1Result));
+    thisExtension->soFileNameRootHash = hashString(baseName);
+    thisExtension->functions = malloc(sizeof(void *));
+    *thisExtension->functions = NULL;
+    thisExtension->baseName = baseName;
+    thisExtension->loaded = 0;
+
+    char **LINKTABLENAMESptr = dlsym(extension, "LINKTABLENAMES");
+    void **LINKTABLEVALUES = dlsym(extension, "LINKTABLEVALUES");
+
+    if(LINKTABLENAMESptr && LINKTABLEVALUES){
+        // Unprotect the memory to prepare it for modifying
+        unsigned int elementsCount = *((unsigned int *) LINKTABLEVALUES);
+        mprotect((void *) (((unsigned long long int) LINKTABLEVALUES) & ~0xFFF), 4 * elementsCount, PROT_READ | PROT_WRITE);
+
+        // The first uint32_t of LINKTABLEVALUES is the length.
+        LOG("[I]: Pass 1: Found link table at %p\n", LINKTABLENAMESptr);
+        char *LINKTABLENAMES = *LINKTABLENAMESptr;
+
+        // Iterate over the functions to work on and declare them in the RESULTS list
+
+        int entryLength, entryNumber = 1; // We're starting with entry 1 since entry 0 is length.
+        while(elementsCount && (entryLength = strlen(LINKTABLENAMES)) != 0) {
+            char symbolType = LINKTABLENAMES[0];
+            struct LinkingPass1SOFunction *definition = malloc(sizeof(struct LinkingPass1SOFunction));
+            definition->functionNameHash = hashString(LINKTABLENAMES);
+            definition->functionName = strdup(LINKTABLENAMES + 1);
+
+            struct LinkingPass1SOFunction *check;
+            HASH_FIND_HT(*thisExtension->functions, &definition->functionNameHash, check);
+            if(check != NULL){
+                LOG("[F]: Pass 1: Extension %s works on the same function %s more than once!\n", baseName, LINKTABLENAMES + 1);
+                exit(1);
+            }
+
+            if(symbolType == 'I') {
+                // Import
+                definition->type = LP1_F_TYPE_IMPORT;
+                definition->address = &LINKTABLEVALUES[entryNumber]; // Pointer to this value - it's the address of the function according to the extension
+                HASH_ADD_HT(*thisExtension->functions, functionNameHash, definition);
+            } else if (symbolType == 'E') {
+                // Export
+                definition->type = LP1_F_TYPE_EXPORT;
+                definition->address = LINKTABLEVALUES[entryNumber]; // No pointer - we take the address from the table
+                HASH_ADD_HT(*thisExtension->functions, functionNameHash, definition);
+            } else if (symbolType == 'O') {
+                // Override the symbol in the global scope
+                definition->type = LP1_F_TYPE_OVERRIDE;
+                definition->address = LINKTABLEVALUES[entryNumber]; // No pointer - we take the address from the table (like before)
+                HASH_ADD_HT(*thisExtension->functions, functionNameHash, definition);
+            } else {
+                LOG("[E]: Pass 1: Illegal symbol type %c for function %s! Symbol skipped.\n", *LINKTABLENAMES, LINKTABLENAMES + 1);
+                // Destroy the memory.
+                free(definition->functionName);
+                free(definition);
+            }
+            LINKTABLENAMES += entryLength + 1;
+            entryNumber++;
+            --elementsCount;
+        }
+    }
+    thisExtension->constructor = dlsym(extension, "_xovi_construct");
+    if(!thisExtension->constructor) {
+        LOG("[W]: Pass 1: Extension %s does not export a constructor!\n", baseName);
+    }
+    thisExtension->environment = dlsym(extension, "Environment");
+    if(!thisExtension->constructor) {
+        LOG("[W]: Pass 1: Extension %s does not export to receive the Environment handle!\n", baseName);
+    }
+
+    struct LinkingPass1Result *check;
+    HASH_FIND_HT(PASS1_RESULTS, &thisExtension->soFileNameRootHash, check);
+    if(check != NULL){
+        LOG("[F]: Pass 1: Extension %s has been processed more than once!\n", baseName);
+        exit(1);
+    }
+
+
+    HASH_ADD_HT(PASS1_RESULTS, soFileNameRootHash, thisExtension);
+    LOG("[I]: Pass 1: Loaded extension %s from file %s\n", baseName, extensionSOFile);
+}
+
+static void *resolveImport(struct LinkingPass1Result *extension, char *importName) {
+    // An import can be defined in one of two ways:
+    // 1. Standard library, but safe-to-use, never hooked version. (f.ex. $strlen - will be written as 'strlen' (stripped '$'))
+    // 2. Different extension (f.ex. fileman$addFileHook ($ remains))
+    // To differentiate between the variant, it's enough to look for a '$' sign.
+    char *extensionFunctionName = strchr(importName, '$');
+    LOG("[I]: Pass 2b: Importing function %s - ", importName);
+    if(extensionFunctionName == NULL) {
+        LOG("standard function - ");
+        // It's a standard library function.
+        // Has it ever been hooked?
+        hash_t hash = hashString(importName);
+        struct OverrideFunctionTrace *function;
+        HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
+        if(function != NULL) {
+            // Yes - here be dragons
+            // Allocate the untrampoline function
+            LOG("HOOKED - Allocating untrampoline\n");
+            void *untrampolineBase = &extension->untrampolineFunctionCache[
+                ARCHDEP_UNTRAMPOLINE_LENGTH *
+                extension->populatedUntrampolineFunctions++
+            ];
+            generateUntrampoline(
+                untrampolineBase,
+                function->data,
+                (extension->importsCount - extension->populatedUntrampolineFunctions + 1) * ARCHDEP_UNTRAMPOLINE_LENGTH
+            );
+            return untrampolineBase;
+        } else {
+            // No - it is not hooked.
+            // Use the system linker
+            LOG("untouched.\n");
+            return dlsym(RTLD_NEXT, importName);
+        }
+    } else {
+        LOG("Submodule\n");
+        // No - this is a submodule function.
+        hash_t extensionBaseNameHash = hashStringL(importName, extensionFunctionName - importName);
+        extensionFunctionName++; // Skip the '$'.
+        struct LinkingPass1Result *dependency;
+        HASH_FIND_HT(PASS1_RESULTS, &extensionBaseNameHash, dependency);
+        if(dependency == NULL) {
+            LOG("[F]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", extension->baseName, importName);
+            exit(1);
+        }
+        hash_t functionHash = hashStringS(extensionFunctionName, hashString("E"));
+        struct LinkingPass1SOFunction *function;
+        HASH_FIND_HT(*dependency->functions, &functionHash, function);
+        if(function == NULL) {
+            LOG("[F]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", extension->baseName, importName);
+            exit(1);
+        }
+        LOG("[I]: Pass 2b: Extension %s loaded %s!\n", extension->baseName, importName);
+        return function->address;
+    }
+}
+
+static void defineOverride(char *extensionBaseName, char *symbolName, void *newAddress) {
+    // Have we already hooked this function?
+    hash_t hash = hashString(symbolName);
+    struct OverrideFunctionTrace *function;
+    HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
+    if(function != NULL) {
+        // Bad
+        LOG("[F]: Pass 2a: Function %s has been hooked more than once! (Hooking by %s. Already hooked by %s)\n", symbolName, extensionBaseName, function->ownerExtensionBaseName);
+        exit(1);
+    }
+    // Good.
+    function = malloc(sizeof(struct OverrideFunctionTrace));
+    function->ownerExtensionBaseName = extensionBaseName;
+    function->overridenFunctionNameHash = hash;
+    LOG("[I]: Pass 2a: Hooking function %s on behalf of extension %s\n", symbolName, extensionBaseName);
+    function->data = pivotSymbol(symbolName, newAddress);
+    if(function->data == NULL) {
+        LOG("[F]: Pass 2a: Failed to hook function!");
+        exit(1);
+    }
+    HASH_ADD_HT(OVERRIDEN_FUNCTIONS, overridenFunctionNameHash, function);
+}
+
+void requireExtension(hash_t hash, const char *nameFallback) {
+    struct LinkingPass1Result *soFile;
+
+    LOG("[I]: Init: Initializing extension %s(%llx)...\n", nameFallback ? nameFallback : "<Not provided>", hash);
+
+    HASH_FIND_HT(PASS1_RESULTS, &hash, soFile);
+    if(soFile == NULL) {
+        // There is no such extension
+        LOG("[F]: Init: Cannot load extension %s(%llx) - not found!\n", nameFallback ? nameFallback : "<Not provided>", hash);
+        exit(1);
+    }
+    if(soFile->loaded){
+        LOG("[I]: Init: Loading %s(%llx) - skipped. Already loaded.\n", nameFallback ? nameFallback : "<Not provided>", hash);
+        return;
+    }
+
+    if(soFile->constructor) soFile->constructor();
+    soFile->loaded = 1;
+}
+
+void requireExtensionWithChecks(const char *name, unsigned int version) {
+    // TODO: Version check.
+    requireExtension(hashString((char *) name), name);
+}
+
+// PASS 2:
+void loadAllExtensions(struct XoViEnvironment *env){
+    LOG("[I]: Pass 2: Starting pass 2a (override hooking)...\n");
+
+    struct LinkingPass1Result *currentExtension;
+    for(
+        currentExtension = PASS1_RESULTS;
+        currentExtension != NULL;
+        currentExtension = currentExtension->hh.next
+    ) {
+        // Count the IMPORTs as well. We'll need their count later.
+        currentExtension->importsCount = 0;
+        if(currentExtension->environment) {
+            *currentExtension->environment = env;
+        }
+        LOG("[I]: Pass 2a: Linking extension %s...\n", currentExtension->baseName);
+        struct LinkingPass1SOFunction *currentFunction;
+        for(
+            currentFunction = *currentExtension->functions;
+            currentFunction != NULL;
+            currentFunction = currentFunction->hh.next
+        ) {
+            LOG("[I]: Pass 2a: Processing function %s... ", currentFunction->functionName);
+            void *resolved;
+            switch(currentFunction->type){
+                case LP1_F_TYPE_EXPORT:
+                    LOG("Export - Skipping\n");
+                    break;
+                case LP1_F_TYPE_IMPORT:
+                    LOG("Import - Skipping.\n");
+                    currentExtension->importsCount++;
+                    break;
+                case LP1_F_TYPE_OVERRIDE:
+                    LOG("Override - defining.\n");
+                    defineOverride(currentExtension->baseName, currentFunction->functionName, currentFunction->address);
+                    break;
+            }
+        }
+        // Allocate the space for all the untrampoline jumps
+        currentExtension->untrampolineFunctionCache = mmap(NULL, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
+        currentExtension->populatedUntrampolineFunctions = 0;
+    }
+
+    LOG("[I]: Pass 2: Starting pass 2b (import / export linking)...\n");
+    int count = 0;
+    for(
+        currentExtension = PASS1_RESULTS;
+        currentExtension != NULL;
+        currentExtension = currentExtension->hh.next
+    ) {
+        ++count;
+        LOG("[I]: Pass 2b: Linking extension %s...\n", currentExtension->baseName);
+        struct LinkingPass1SOFunction *currentFunction;
+        for(
+            currentFunction = *currentExtension->functions;
+            currentFunction != NULL;
+            currentFunction = currentFunction->hh.next
+        ) {
+            LOG("[I]: Pass 2b: Processing function %s... ", currentFunction->functionName);
+            void *resolved;
+            switch(currentFunction->type){
+                case LP1_F_TYPE_EXPORT:
+                    LOG("Export - Skipping\n");
+                    break;
+                case LP1_F_TYPE_IMPORT:
+                    LOG("Import - Trying to resolve import.\n");
+                    resolved = resolveImport(currentExtension, currentFunction->functionName);
+                    if(!resolved) {
+                        LOG("[F]: Pass 2b: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
+                        exit(-1);
+                    }
+                    *((void **) currentFunction->address) = resolved;
+                    break;
+                case LP1_F_TYPE_OVERRIDE:
+                    LOG("Override - Skipping\n");
+                    break;
+            }
+        }
+        mprotect(currentExtension->untrampolineFunctionCache, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH, PROT_EXEC | PROT_READ);
+    }
+    LOG("[I]: Pass 2: Pass 2 complete. Linking is done.\n");
+    LOG("[I]: Starting initialization...\n");
+    env->requireExtension = requireExtensionWithChecks;
+
+    for(
+        currentExtension = PASS1_RESULTS;
+        currentExtension != NULL;
+        currentExtension = currentExtension->hh.next
+    ) {
+        requireExtension(currentExtension->soFileNameRootHash, currentExtension->baseName);
+    }
+    env->requireExtension = NULL;
+    LOG("[I]: Init complete. There are %d extensions loaded.\n", count);
+}
