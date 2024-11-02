@@ -109,7 +109,7 @@ def process(root, outdir, dirtree):
         copy(full_in_fname, full_out_fname)
     for fname in dirtree.file_set:
         all_directives = [*dirtree.global_directives, *dirtree.file_directives[fname]]
-        makedirs(join(root, dirname(outdir)), exist_ok=True)
+        makedirs(join(root, dirname(join(outdir, fname))), exist_ok=True)
         full_in_fname = join(root, fname)
         full_out_fname = join(outdir, fname)
         with open(full_in_fname, 'r') as read, open(full_out_fname, 'w') as write:
