@@ -9,21 +9,13 @@
 
 #ifndef DEBUGFUNC
 #define CONSTRUCTOR __attribute__((constructor))
-#define TEST_FUNC
 #else
 #define CONSTRUCTOR
 
 void _ext_init();
-#define TEST_FUNC testFunc()
 
 int testFunc() {
-    FILE *string = fopen("/tmp/hello", "r");
-    fopen("/tmp/hello", "r");fopen("/tmp/hello", "r");open("/tmp/hello", O_RDONLY);fopen("/tmp/hello", "r");fopen("/tmp/hello", "r");
-    printf("Opened: %p\n", string);
-
-    printf("%d\n", string->_fileno);
-
-    fclose(string);
+    printf("In playground\n");
 }
 
 int main(){
@@ -85,11 +77,10 @@ void CONSTRUCTOR _ext_init() {
         closedir(rootDirOfExtensions);
         loadAllExtensions(environment);
 
-        TEST_FUNC;
-
-        #ifdef DEBUG
-        // Only when we're in debug do we actually clean up in the constructor. Otherwise this program will stay resident for the whole life of the
+        #ifdef DEBUGFUNC
+        // Only when we're in debug (non-shared) do we actually clean up in the env. Otherwise this object should stay resident for the whole life of the
         // attached process.
+        testFunc();
         free(environment);
         #endif
     } else {
