@@ -11,13 +11,13 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     LOG("[W]: Pass 1: Begin loading extension %s from file %s\n", baseName, extensionSOFile);
     void *extension = dlopen(extensionSOFile, RTLD_NOW);
     if(!extension) {
-        LOG("[F]: Pass 1: Couldn't load extension:\n%s\n", dlerror());
+        LOG_F("[F]: Pass 1: Couldn't load extension:\n%s\n", dlerror());
         exit(1);
     }
     char (*shouldLoad)() = dlsym(extension, "_xovi_shouldLoad");
     if(shouldLoad){
         if(!shouldLoad()){
-            printf("[I]: Pass 1: The extension refused being loaded. Skipping.");
+            LOG("[I]: Pass 1: The extension refused being loaded. Skipping.");
             return;
         }
     }
@@ -72,7 +72,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
             struct LinkingPass1SOFunction *check;
             HASH_FIND_HT(*thisExtension->functions, &definition->functionNameHash, check);
             if(check != NULL){
-                LOG("[F]: Pass 1: Extension %s works on the same function %s more than once!\n", baseName, LINKTABLENAMES + 1);
+                LOG_F("[F]: Pass 1: Extension %s works on the same function %s more than once!\n", baseName, LINKTABLENAMES + 1);
                 exit(1);
             }
 
@@ -114,7 +114,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     struct LinkingPass1Result *check;
     HASH_FIND_HT(PASS1_RESULTS, &thisExtension->soFileNameRootHash, check);
     if(check != NULL){
-        LOG("[F]: Pass 1: Extension %s has been processed more than once!\n", baseName);
+        LOG_F("[F]: Pass 1: Extension %s has been processed more than once!\n", baseName);
         exit(1);
     }
 
@@ -165,14 +165,14 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         struct LinkingPass1Result *dependency;
         HASH_FIND_HT(PASS1_RESULTS, &extensionBaseNameHash, dependency);
         if(dependency == NULL) {
-            LOG("[F]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", extension->baseName, importName);
+            LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", extension->baseName, importName);
             exit(1);
         }
         hash_t functionHash = hashStringS(extensionFunctionName, hashString("E"));
         struct LinkingPass1SOFunction *function;
         HASH_FIND_HT(*dependency->functions, &functionHash, function);
         if(function == NULL) {
-            LOG("[F]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", extension->baseName, importName);
+            LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", extension->baseName, importName);
             exit(1);
         }
         LOG("[I]: Pass 2b: Extension %s loaded %s!\n", extension->baseName, importName);
@@ -187,7 +187,7 @@ static void defineOverride(char *extensionBaseName, char *symbolName, void *newA
     HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
     if(function != NULL) {
         // Bad
-        LOG("[F]: Pass 2a: Function %s has been hooked more than once! (Hooking by %s. Already hooked by %s)\n", symbolName, extensionBaseName, function->ownerExtensionBaseName);
+        LOG_F("[F]: Pass 2a: Function %s has been hooked more than once! (Hooking by %s. Already hooked by %s)\n", symbolName, extensionBaseName, function->ownerExtensionBaseName);
         exit(1);
     }
     // Good.
@@ -197,7 +197,7 @@ static void defineOverride(char *extensionBaseName, char *symbolName, void *newA
     LOG("[I]: Pass 2a: Hooking function %s on behalf of extension %s\n", symbolName, extensionBaseName);
     function->data = pivotSymbol(symbolName, newAddress);
     if(function->data == NULL) {
-        LOG("[F]: Pass 2a: Failed to hook function!");
+        LOG_F("[F]: Pass 2a: Failed to hook function!");
         exit(1);
     }
     HASH_ADD_HT(OVERRIDEN_FUNCTIONS, overridenFunctionNameHash, function);
@@ -212,7 +212,7 @@ void requireExtension(hash_t hash, const char *nameFallback, unsigned char major
     HASH_FIND_HT(PASS1_RESULTS, &hash, soFile);
     if(soFile == NULL) {
         // There is no such extension
-        LOG("[F]: Init: Cannot load extension %s(%llx) - not found!\n", thisExtName, hash);
+        LOG_F("[F]: Init: Cannot load extension %s(%llx) - not found!\n", thisExtName, hash);
         exit(1);
     }
     if(!(major == 255 && minor == 255 && patch == 255)) {
@@ -222,7 +222,7 @@ void requireExtension(hash_t hash, const char *nameFallback, unsigned char major
             (major == soFile->version.major && minor > soFile->version.minor) ||
             (major == soFile->version.major && minor == soFile->version.minor && patch > soFile->version.patch)
         ) {
-            LOG(
+            LOG_F(
                 "[F]: Init: Extension %s requires extension %s at version %d.%d.%d (or compatible). Version %d.%d.%d installed currently is not compatible!\n",
                 thisExtName,
                 soFile->baseName,
@@ -313,7 +313,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
                     LOG("Import - Trying to resolve import.\n");
                     resolved = resolveImport(currentExtension, currentFunction->functionName);
                     if(!resolved) {
-                        LOG("[F]: Pass 2b: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
+                        LOG_F("[F]: Pass 2b: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
                         exit(-1);
                     }
                     *((void **) currentFunction->address) = resolved;

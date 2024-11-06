@@ -5,3 +5,5 @@
 #else
 #define LOG
 #endif
+
+#define LOG_F(...) printf(__VA_ARGS__)
