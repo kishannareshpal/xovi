@@ -85,6 +85,10 @@ def parse_directives(directives):
         if out_directive:
             final_dirs[out_directive.file].append(out_directive)
     gl = final_dirs[""]
+    unloaded_make_files = [x for x in make_files if x not in final_dirs]
+    if unloaded_make_files:
+        for x in unloaded_make_files:
+            print(f"Warning: File {x} is not included, but is required to be made.")
     del final_dirs[""]
     return DirectiveFile(
         final_file_set,
