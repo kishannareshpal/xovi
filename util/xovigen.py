@@ -4,13 +4,14 @@ from argparse import ArgumentParser
 from os import makedirs
 from shutil import rmtree, copy
 from dataclasses import dataclass
-from os.path import join, dirname, splitext, basename
+from os.path import join, dirname, splitext, basename, isfile
 
 EXPORT = 1
 IMPORT = 2
 OVERRIDE = 3
 COPY = 4
 VERSION = 5
+RESOURCE = 6
 
 @dataclass
 class Directive:
@@ -82,6 +83,8 @@ def parse_directives(directives):
                 out_directive = Directive(COPY, operand, '')
             case 'version':
                 out_directive = Directive(VERSION, operand, '')
+            case 'resource':
+                out_directive = Directive(RESOURCE, operand, '')
         if out_directive:
             final_dirs[out_directive.file].append(out_directive)
     gl = final_dirs[""]
@@ -111,6 +114,18 @@ def process(root, outdir, dirtree):
         full_in_fname = join(root, fname)
         full_out_fname = join(outdir, fname)
         copy(full_in_fname, full_out_fname)
+
+    resource_directives = [list(x.symbol.split(':')) for x in dirtree.global_directives if x.dir_type == RESOURCE]
+    for res in resource_directives:
+        if len(res) != 2:
+            print(f"Error: Resource directive should follow the format `resname:/path/to/resource`")
+            return
+        if not isfile(res[1]):
+            print(f"Error: '{res[1]}' (resource {res[0]}) is not a file!")
+            return
+        with open(res[1], 'rb') as f:
+            res[1] = f.read() + b'\0'
+
     for fname in dirtree.file_set:
         all_directives = [*dirtree.global_directives, *dirtree.file_directives[fname]]
         makedirs(join(root, dirname(join(outdir, fname))), exist_ok=True)
@@ -149,6 +164,8 @@ def process(root, outdir, dirtree):
                     final_out_vartable.append(f"override${directive.symbol}")
                     final_out_nametable.append(f'O{directive.symbol}')
             write.write('extern const void *LINKTABLEVALUES[];\n')
+            for res in resource_directives:
+                write.write(f'extern const char r${res[0]}[{len(res[1])}];\n')
             write.write(input_contents)
     version_directives = [x for x in dirtree.global_directives if x.dir_type == VERSION]
     if len(version_directives) > 1:
@@ -178,6 +195,10 @@ def process(root, outdir, dirtree):
         linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLENAMES = "{zero.join(final_out_nametable)}{zero}{zero}";{nl}""")
         linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLEVALUES[] = {{{', '.join(vartable)}}};{nl}""")
         linktable.write(f"""__attribute__((section(".xovi"))) const struct XoViEnvironment *Environment = 0;{nl}""")
+
+        for res in resource_directives:
+            linktable.write(f"""const char r${res[0]}[{len(res[1])}] = {{ {','.join(map(str, res[1]))} }};{nl}""")
+
         if version is not None:
             linktable.write(f"""__attribute__((section(".xovi_info"))) const int EXTENSIONVERSION = {version};{nl}""")
 
