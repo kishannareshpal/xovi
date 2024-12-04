@@ -1,9 +1,9 @@
 #pragma once
 #include <stdio.h>
 #ifdef DEBUG
-#define LOG(...) printf(__VA_ARGS__)
+#define LOG(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define LOG
 #endif
 
-#define LOG_F(...) printf(__VA_ARGS__)
+#define LOG_F(...) fprintf(stderr, __VA_ARGS__)
