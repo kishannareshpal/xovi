@@ -136,7 +136,6 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
     // To differentiate between the variant, it's enough to look for a '$' sign.
     char *extensionFunctionName = strchr(importName, '$');
     LOG("[I]: Pass 2b: Importing function %s - ", importName);
-    char errorType = onlyCheck ? 'I' : 'F';
     if(extensionFunctionName == NULL) {
         LOG("standard function - ");
         // It's a standard library function.
@@ -176,14 +175,22 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         struct LinkingPass1Result *dependency;
         HASH_FIND_HT(PASS1_RESULTS, &extensionBaseNameHash, dependency);
         if(dependency == NULL) {
-            LOG_F("[%c]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", errorType, extension->baseName, importName);
+            if(onlyCheck){
+                LOG("[I]: Pass 2b: Extension %s wanted to load function %s - couldn't find extension!\n", extension->baseName, importName);
+            } else {
+                LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - couldn't find extension!\n", extension->baseName, importName);
+            }
             return NULL;
         }
         hash_t functionHash = hashStringS(extensionFunctionName, hashString("E"));
         struct LinkingPass1SOFunction *function;
         HASH_FIND_HT(*dependency->functions, &functionHash, function);
         if(function == NULL) {
-            LOG_F("[%c]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", errorType, extension->baseName, importName);
+            if(onlyCheck){
+                LOG("[I]: Pass 2b: Extension %s wanted to load function %s - couldn't find function!\n", extension->baseName, importName);
+            } else {
+                LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - couldn't find function!\n", extension->baseName, importName);
+            }
             return NULL;
         }
         LOG("[I]: Pass 2b: Extension %s loaded %s!\n", extension->baseName, importName);
