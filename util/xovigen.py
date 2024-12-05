@@ -12,6 +12,8 @@ OVERRIDE = 3
 COPY = 4
 VERSION = 5
 RESOURCE = 6
+MODULEBASE = 7
+CONDITION = 8
 
 @dataclass
 class Directive:
@@ -22,6 +24,7 @@ class Directive:
 @dataclass
 class DirectiveFile:
     file_set: set
+    modulebase: str
     global_directives: list
     file_directives: dict
     problems: list
@@ -45,6 +48,7 @@ def parse_directives(directives):
 
     problems = []
     current_file = ""
+    modulebase = None
     make_files = []
     for i, directive in enumerate(directives):
         # Remove comments:
@@ -66,6 +70,7 @@ def parse_directives(directives):
 
         directive, operand = tokens
         out_directive = None
+        out_directives = []
         match directive.lower():
             case 'file':
                 current_file = operand
@@ -77,6 +82,13 @@ def parse_directives(directives):
                 out_directive = Directive(EXPORT, operand, current_file)
             case 'import':
                 out_directive = Directive(IMPORT, operand, current_file)
+            case 'import?':
+                out_directives = [
+                    Directive(IMPORT, operand, current_file),
+                    Directive(CONDITION, operand, '')
+                ]
+            case 'condition':
+                out_directive = Directive(IMPORT, operand, '')
             case 'override':
                 out_directive = Directive(OVERRIDE, operand, current_file)
             case 'copy':
@@ -85,6 +97,17 @@ def parse_directives(directives):
                 out_directive = Directive(VERSION, operand, '')
             case 'resource':
                 out_directive = Directive(RESOURCE, operand, '')
+            case 'modulebase':
+                if modulebase is not None:
+                    problems.append(Problem(True, i + 1, directive, "Cannot specify more than one module base"))
+                    break
+                modulebase = operand
+                current_file = modulebase
+                final_file_set.add(modulebase)
+                final_dirs[modulebase] = []
+        if out_directives:
+            for d in out_directives:
+                final_dirs[d.file].append(d)
         if out_directive:
             final_dirs[out_directive.file].append(out_directive)
     gl = final_dirs[""]
@@ -95,6 +118,7 @@ def parse_directives(directives):
     del final_dirs[""]
     return DirectiveFile(
         final_file_set,
+        modulebase,
         gl,
         final_dirs,
         problems,
@@ -126,15 +150,20 @@ def process(root, outdir, dirtree):
         with open(res[1], 'rb') as f:
             res[1] = f.read() + b'\0'
 
+    module_base_contents = ""
     for fname in dirtree.file_set:
         all_directives = [*dirtree.global_directives, *dirtree.file_directives[fname]]
         makedirs(join(root, dirname(join(outdir, fname))), exist_ok=True)
         full_in_fname = join(root, fname)
         full_out_fname = join(outdir, fname)
-        with open(full_in_fname, 'r') as read, open(full_out_fname, 'w') as write:
+        with open(full_in_fname, 'r') as read:
             input_contents = read.read()
             for directive in all_directives:
-                if directive.dir_type == IMPORT:
+                if directive.dir_type == CONDITION and f"C{directive.symbol}" not in final_out_nametable:
+                    final_out_vartable.append('0')
+                    final_out_nametable.append(f"C{directive.symbol}")
+                    next_import_idx += 1
+                elif directive.dir_type == IMPORT:
                     # have we already imported this?
                     if directive.symbol in input_import_lookups:
                         # Yes - use that
@@ -148,11 +177,11 @@ def process(root, outdir, dirtree):
                         final_out_nametable.append(f"I{directive.symbol}")
                     new_name = f'((unsigned long long int(*)()) LINKTABLEVALUES[{idx}])'
                     if '$' not in directive.symbol:
-                        name = rf"(?<!override)\${re.escape(directive.symbol)}"
+                        name = rf"(?<!override)\${re.escape(directive.symbol).replace('-', '_')}"
                         input_contents = re.sub(name, new_name, input_contents)
                     else:
                         name = directive.symbol
-                        input_contents = input_contents.replace(name, new_name)
+                        input_contents = input_contents.replace(name.replace('-', '_'), new_name)
                 elif directive.dir_type == EXPORT:
                     next_import_idx += 1
                     externs.append(directive.symbol)
@@ -163,10 +192,15 @@ def process(root, outdir, dirtree):
                     externs.append(f"override${directive.symbol}")
                     final_out_vartable.append(f"override${directive.symbol}")
                     final_out_nametable.append(f'O{directive.symbol}')
-            write.write('extern const void *LINKTABLEVALUES[];\n')
+            output =  'extern const void *LINKTABLEVALUES[];\n'
             for res in resource_directives:
-                write.write(f'extern const char r${res[0]}[{len(res[1])}];\n')
-            write.write(input_contents)
+                output += f'extern const char r${res[0]}[{len(res[1])}];\n'
+            output += input_contents
+            if dirtree.modulebase != fname:
+                with open(full_out_fname, 'w') as write:
+                    write.write(output)
+            else:
+                module_base_contents = output
     version_directives = [x for x in dirtree.global_directives if x.dir_type == VERSION]
     if len(version_directives) > 1:
         print("Warning: More than one version directive in the XOVI project file.")
@@ -189,11 +223,13 @@ def process(root, outdir, dirtree):
         nl = '\n'
         final_out_vartable.insert(0, str(len(final_out_vartable)))
         linktable.write(f"""// This file is autogenerated. Please do not alter it manually and instead run xovigen.py.{nl}""")
+        linktable.write(module_base_contents)
+        linktable.write("\n")
         for extern in externs:
             linktable.write(f"extern void {extern}();\n")
         vartable = [f'(void *) {x}' for x in final_out_vartable]
         linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLENAMES = "{zero.join(final_out_nametable)}{zero}{zero}";{nl}""")
-        linktable.write(f"""__attribute__((section(".xovi"))) const char *LINKTABLEVALUES[] = {{{', '.join(vartable)}}};{nl}""")
+        linktable.write(f"""__attribute__((section(".xovi"))) const void *LINKTABLEVALUES[] = {{{', '.join(vartable)}}};{nl}""")
         linktable.write(f"""__attribute__((section(".xovi"))) const struct XoViEnvironment *Environment = 0;{nl}""")
 
         for res in resource_directives:
@@ -211,7 +247,7 @@ def write_make_file(output_root, project_name, compiler, arguments, directives):
 
 def main():
     argparse = ArgumentParser()
-    argparse.add_argument('-o', '--output', help="Output directory", required=True)
+    argparse.add_argument('-o', '--output', help="Output directory (WILL BE DELETED)", required=True)
     argparse.add_argument('-r', '--root', help="Root of the files described in XoVi config")
     argparse.add_argument('-m', '--write-make', help="Root of the files described in XoVi config", action='store_true')
     argparse.add_argument('-c', '--compiler', help="C compiler command", default='gcc')

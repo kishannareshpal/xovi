@@ -28,6 +28,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     *thisExtension->functions = NULL;
     thisExtension->baseName = baseName;
     thisExtension->loaded = 0;
+    thisExtension->handle = extension;
 
     char **LINKTABLENAMESptr = dlsym(extension, "LINKTABLENAMES");
     void **LINKTABLEVALUES = dlsym(extension, "LINKTABLEVALUES");
@@ -81,6 +82,11 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
                 definition->type = LP1_F_TYPE_IMPORT;
                 definition->address = &LINKTABLEVALUES[entryNumber]; // Pointer to this value - it's the address of the function according to the extension
                 HASH_ADD_HT(*thisExtension->functions, functionNameHash, definition);
+            } else if(symbolType == 'C') {
+                // Import
+                definition->type = LP1_F_TYPE_CONDITION;
+                definition->address = NULL;
+                HASH_ADD_HT(*thisExtension->functions, functionNameHash, definition);
             } else if (symbolType == 'E') {
                 // Export
                 definition->type = LP1_F_TYPE_EXPORT;
@@ -123,13 +129,14 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     LOG("[I]: Pass 1: Loaded extension %s from file %s\n", baseName, extensionSOFile);
 }
 
-static void *resolveImport(struct LinkingPass1Result *extension, char *importName) {
+static void *resolveImport(struct LinkingPass1Result *extension, char *importName, bool onlyCheck) {
     // An import can be defined in one of two ways:
     // 1. Standard library, but safe-to-use, never hooked version. (f.ex. $strlen - will be written as 'strlen' (stripped '$'))
     // 2. Different extension (f.ex. fileman$addFileHook ($ remains))
     // To differentiate between the variant, it's enough to look for a '$' sign.
     char *extensionFunctionName = strchr(importName, '$');
     LOG("[I]: Pass 2b: Importing function %s - ", importName);
+    char errorType = onlyCheck ? 'I' : 'F';
     if(extensionFunctionName == NULL) {
         LOG("standard function - ");
         // It's a standard library function.
@@ -137,6 +144,10 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         hash_t hash = hashString(importName);
         struct OverrideFunctionTrace *function;
         HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
+        if(onlyCheck) {
+            LOG("check only.\n");
+            return dlsym(RTLD_NEXT, importName);
+        }
         if(function != NULL) {
             // Yes - here be dragons
             // Allocate the untrampoline function
@@ -165,15 +176,15 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         struct LinkingPass1Result *dependency;
         HASH_FIND_HT(PASS1_RESULTS, &extensionBaseNameHash, dependency);
         if(dependency == NULL) {
-            LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", extension->baseName, importName);
-            exit(1);
+            LOG_F("[%c]: Pass 2b: Extension %s wanted to load function %s - could't find extension!\n", errorType, extension->baseName, importName);
+            return NULL;
         }
         hash_t functionHash = hashStringS(extensionFunctionName, hashString("E"));
         struct LinkingPass1SOFunction *function;
         HASH_FIND_HT(*dependency->functions, &functionHash, function);
         if(function == NULL) {
-            LOG_F("[F]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", extension->baseName, importName);
-            exit(1);
+            LOG_F("[%c]: Pass 2b: Extension %s wanted to load function %s - could't find function!\n", errorType, extension->baseName, importName);
+            return NULL;
         }
         LOG("[I]: Pass 2b: Extension %s loaded %s!\n", extension->baseName, importName);
         return function->address;
@@ -245,6 +256,20 @@ void requireExtensionByName(const char *name, unsigned char major, unsigned char
     requireExtension(hashString((char *) name), NULL, major, minor, patch);
 }
 
+void unloadPass1Result(struct LinkingPass1Result *currentExtension) {
+    HASH_DEL(PASS1_RESULTS, currentExtension);
+    struct LinkingPass1SOFunction *func, *tmp;
+    HASH_ITER(hh, *currentExtension->functions, func, tmp) {
+        HASH_DEL(*currentExtension->functions, func);
+        free(func->functionName);
+        free(func);
+    }
+    dlclose(currentExtension->handle);
+    free(currentExtension->baseName);
+    munmap(currentExtension->untrampolineFunctionCache, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH);
+    free(currentExtension);
+}
+
 // PASS 2:
 void loadAllExtensions(struct XoViEnvironment *env){
     LOG("[I]: Pass 2: Starting pass 2a (override hooking)...\n");
@@ -287,6 +312,31 @@ void loadAllExtensions(struct XoViEnvironment *env){
         currentExtension->untrampolineFunctionCache = mmap(NULL, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
         currentExtension->populatedUntrampolineFunctions = 0;
     }
+    LOG("[I]: Pass 2: Starting pass 2b (conditional loading)...\n");
+    bool changesDone = false;
+    do {
+        LOG("[I]: Pass 2b: Iterating over modules...\n");
+        changesDone = false;
+        struct LinkingPass1Result *tmp;
+        HASH_ITER(hh, PASS1_RESULTS, currentExtension, tmp) {
+            struct LinkingPass1SOFunction *currentFunction;
+            for(
+                currentFunction = *currentExtension->functions;
+                currentFunction != NULL;
+                currentFunction = currentFunction->hh.next
+            ) {
+                if(currentFunction->type == LP1_F_TYPE_CONDITION){
+                    if(resolveImport(currentExtension, currentFunction->functionName, true) == NULL) {
+                        // If the function does not exist, delete unload this extension.
+                        LOG("[I]: Condition not met for %s. Unloading...\n", currentExtension->baseName);
+                        unloadPass1Result(currentExtension);
+                        // Continue iteration - unload all items that depended on this
+                        changesDone = true;
+                    }
+                }
+            }
+        }
+    } while(changesDone);
 
     LOG("[I]: Pass 2: Starting pass 2b (import / export linking)...\n");
     int count = 0;
@@ -311,7 +361,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
                     break;
                 case LP1_F_TYPE_IMPORT:
                     LOG("Import - Trying to resolve import.\n");
-                    resolved = resolveImport(currentExtension, currentFunction->functionName);
+                    resolved = resolveImport(currentExtension, currentFunction->functionName, false);
                     if(!resolved) {
                         LOG_F("[F]: Pass 2b: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
                         exit(-1);

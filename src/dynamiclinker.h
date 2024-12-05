@@ -5,6 +5,7 @@
 #include "trampolines/archdepend.h"
 #include "trampolines/trampolines.h"
 #include <dlfcn.h>
+#include <stdbool.h>
 #include <sys/mman.h>
 #include "debug.h"
 #include <string.h>
@@ -12,6 +13,7 @@
 #define LP1_F_TYPE_EXPORT 1
 #define LP1_F_TYPE_IMPORT 2
 #define LP1_F_TYPE_OVERRIDE 3
+#define LP1_F_TYPE_CONDITION 4
 
 struct LinkingPass1SOFunction {
     hash_t functionNameHash;
@@ -36,6 +38,7 @@ struct LinkingPass1Result {
     unsigned char *untrampolineFunctionCache;
     int populatedUntrampolineFunctions;
     int importsCount;
+    void *handle;
 
     struct SemVer version;
 
