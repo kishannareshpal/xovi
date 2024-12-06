@@ -1,0 +1,64 @@
+name: Build with RMPP Toolchain and Upload Release
+
+on:
+    push:
+        tags:
+          - '*'
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        container:
+            image: eeems/remarkable-toolchain:latest-rmpp
+
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v3
+
+            - name: Build Application
+              run: |
+                mkdir ~/Tools
+                ln -rs /opt/codex/ferrari/* ~/Tools/remarkable-toolchain
+                bash make_shared_rmpp_aarch64
+
+            - name: Upload Build Artifact
+              uses: actions/upload-artifact@v3
+              with:
+                name: build-artifact
+                path: xovi.so
+
+    release:
+        runs-on: ubuntu-latest
+
+        needs: build
+
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v3
+
+            - name: Download Build Artifact
+              uses: actions/download-artifact@v3
+              with:
+                name: build-artifact
+
+            - name: Create Release
+              uses: actions/create-release@v1
+              id: create_release
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                draft: false
+                prerelease: false
+                release_name: ${{ github.event.release.tag_name }}
+                tag_name: ${{ github.ref }}
+
+            - name: Upload Release Asset
+              uses: actions/upload-release-asset@v1
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                upload_url: ${{ steps.create_release.outputs.upload_url }}
+                asset_path: xovi.so
+                asset_name: xovi.so
+                asset_content_type: application/octet-stream
