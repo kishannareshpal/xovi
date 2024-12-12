@@ -88,7 +88,7 @@ def parse_directives(directives):
                     Directive(CONDITION, operand, '')
                 ]
             case 'condition':
-                out_directive = Directive(IMPORT, operand, '')
+                out_directive = Directive(CONDITION, operand, '')
             case 'override':
                 out_directive = Directive(OVERRIDE, operand, current_file)
             case 'copy':
