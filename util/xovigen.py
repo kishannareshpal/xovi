@@ -125,7 +125,8 @@ def parse_directives(directives):
         make_files,
     )
 
-def process(root, outdir, dirtree):
+def process(root, outdir, dirtree, cpp):
+    any_args = "..." if cpp else ""
     # iterate over affected files
     final_out_nametable = []
     final_out_vartable = []
@@ -175,7 +176,7 @@ def process(root, outdir, dirtree):
                         next_import_idx += 1
                         final_out_vartable.append('0')
                         final_out_nametable.append(f"I{directive.symbol}")
-                    new_name = f'((unsigned long long int(*)()) LINKTABLEVALUES[{idx}])'
+                    new_name = f'((unsigned long long int(*)({any_args})) LINKTABLEVALUES[{idx}])'
                     if '$' not in directive.symbol:
                         name = rf"(?<!override)\${re.escape(directive.symbol).replace('-', '_')}"
                         input_contents = re.sub(name, new_name, input_contents)
@@ -248,6 +249,7 @@ def write_make_file(output_root, project_name, compiler, arguments, directives):
 def main():
     argparse = ArgumentParser()
     argparse.add_argument('-o', '--output', help="Output directory (WILL BE DELETED)", required=True)
+    argparse.add_argument('-p', '--cpp', help="Process C++ instead", action='store_true')
     argparse.add_argument('-r', '--root', help="Root of the files described in XoVi config")
     argparse.add_argument('-m', '--write-make', help="Root of the files described in XoVi config", action='store_true')
     argparse.add_argument('-c', '--compiler', help="C compiler command", default='gcc')
@@ -265,7 +267,7 @@ def main():
         print(problem)
         if problem.error:
             return
-    process(args.root if args.root else dirname(args.input), args.output, parsed)
+    process(args.root if args.root else dirname(args.input), args.output, parsed, args.cpp)
     if args.write_make and len(parsed.make_files):
         if 'xovi.c' not in parsed.make_files:
             parsed.make_files.append('xovi.c')
