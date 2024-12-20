@@ -140,13 +140,13 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         LOG("standard function - ");
         // It's a standard library function.
         // Has it ever been hooked?
-        hash_t hash = hashString(importName);
-        struct OverrideFunctionTrace *function;
-        HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
         if(onlyCheck) {
             LOG("check only.\n");
             return dlsym(RTLD_NEXT, importName);
         }
+        hash_t hash = hashString(importName);
+        struct OverrideFunctionTrace *function;
+        HASH_FIND_HT(OVERRIDEN_FUNCTIONS, &hash, function);
         if(function != NULL) {
             // Yes - here be dragons
             // Allocate the untrampoline function
@@ -273,7 +273,6 @@ void unloadPass1Result(struct LinkingPass1Result *currentExtension) {
     }
     dlclose(currentExtension->handle);
     free(currentExtension->baseName);
-    munmap(currentExtension->untrampolineFunctionCache, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH);
     free(currentExtension);
 }
 
@@ -282,6 +281,33 @@ void loadAllExtensions(struct XoViEnvironment *env){
     LOG("[I]: Pass 2: Starting pass 2a (override hooking)...\n");
 
     struct LinkingPass1Result *currentExtension;
+    LOG("[I]: Pass 2: Starting pass 2 (conditional loading)...\n");
+    bool changesDone = false;
+    do {
+        LOG("[I]: Pass 2: Iterating over modules...\n");
+        changesDone = false;
+        struct LinkingPass1Result *tmp;
+        HASH_ITER(hh, PASS1_RESULTS, currentExtension, tmp) {
+            struct LinkingPass1SOFunction *currentFunction;
+            for(
+                currentFunction = *currentExtension->functions;
+                currentFunction != NULL;
+                currentFunction = currentFunction->hh.next
+            ) {
+                if(currentFunction->type == LP1_F_TYPE_CONDITION){
+                    if(resolveImport(currentExtension, currentFunction->functionName, true) == NULL) {
+                        // If the function does not exist, delete unload this extension.
+                        LOG("[I]: Condition not met for %s. Unloading...\n", currentExtension->baseName);
+                        unloadPass1Result(currentExtension);
+                        // Continue iteration - unload all items that depended on this
+                        changesDone = true;
+                        break;
+                    }
+                }
+            }
+        }
+    } while(changesDone);
+
     for(
         currentExtension = PASS1_RESULTS;
         currentExtension != NULL;
@@ -319,32 +345,6 @@ void loadAllExtensions(struct XoViEnvironment *env){
         currentExtension->untrampolineFunctionCache = mmap(NULL, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
         currentExtension->populatedUntrampolineFunctions = 0;
     }
-    LOG("[I]: Pass 2: Starting pass 2b (conditional loading)...\n");
-    bool changesDone = false;
-    do {
-        LOG("[I]: Pass 2b: Iterating over modules...\n");
-        changesDone = false;
-        struct LinkingPass1Result *tmp;
-        HASH_ITER(hh, PASS1_RESULTS, currentExtension, tmp) {
-            struct LinkingPass1SOFunction *currentFunction;
-            for(
-                currentFunction = *currentExtension->functions;
-                currentFunction != NULL;
-                currentFunction = currentFunction->hh.next
-            ) {
-                if(currentFunction->type == LP1_F_TYPE_CONDITION){
-                    if(resolveImport(currentExtension, currentFunction->functionName, true) == NULL) {
-                        // If the function does not exist, delete unload this extension.
-                        LOG("[I]: Condition not met for %s. Unloading...\n", currentExtension->baseName);
-                        unloadPass1Result(currentExtension);
-                        // Continue iteration - unload all items that depended on this
-                        changesDone = true;
-                    }
-                }
-            }
-        }
-    } while(changesDone);
-
     LOG("[I]: Pass 2: Starting pass 2b (import / export linking)...\n");
     int count = 0;
     for(
