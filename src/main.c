@@ -7,9 +7,7 @@
 #define EXT_ROOT (XOVI_ROOT "extensions.d/")
 #define FILES_ROOT (XOVI_ROOT "exthome/")
 
-#ifndef DEBUGFUNC
-#define CONSTRUCTOR __attribute__((constructor))
-#else
+#ifdef DEBUGFUNC
 #define CONSTRUCTOR
 
 void _ext_init();
@@ -21,6 +19,8 @@ int testFunc() {
 int main(){
     _ext_init();
 }
+#else
+#define CONSTRUCTOR __attribute__((constructor))
 #endif
 
 char *findBaseName(const char *fileName) {
@@ -87,4 +87,3 @@ void CONSTRUCTOR _ext_init() {
         printf("Cannot find extensions dir! Bailing!\n");
     }
 }
-
