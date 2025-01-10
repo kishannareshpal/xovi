@@ -16,17 +16,25 @@ jobs:
             - name: Checkout Code
               uses: actions/checkout@v3
 
-            - name: Build Application
+            - name: Install CMake
               run: |
-                mkdir ~/Tools
-                ln -rs /opt/codex/ferrari/* ~/Tools/remarkable-toolchain
-                bash make_shared_rmpp_aarch64
+                apt-get update
+                apt-get install -y cmake
+
+            - name: Build Application
+              shell: bash
+              run: |
+                source /opt/codex/ferrari/*/environment-setup-cortexa53-crypto-remarkable-linux
+                mkdir build
+                cd build
+                cmake ..
+                make -j$(nproc)
 
             - name: Upload Build Artifact
               uses: actions/upload-artifact@v3
               with:
                 name: build-artifact
-                path: xovi.so
+                path: build/xovi.so
 
     release:
         runs-on: ubuntu-latest
