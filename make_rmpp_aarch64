@@ -1,9 +1,0 @@
-source ~/Tools/remarkable-toolchain/environment-setup-cortexa53-crypto-remarkable-linux
-
-echo "Warning: You are building a debug-only executable. It has no ability to attach to other processes!"
-aarch64-remarkable-linux-gcc \
-    -D_GNU_SOURCE \
-    --sysroot ~/Tools/remarkable-toolchain/sysroots/cortexa53-crypto-remarkable-linux \
-    -g -DDEBUG -DDEBUGFUNC -DAARCH64 \
-    src/main.c src/dynamiclinker.c src/hash.c src/trampolines/aarch64/aarch64.c src/trampolines/aarch64/untrampoline.S \
-    -o xovi
