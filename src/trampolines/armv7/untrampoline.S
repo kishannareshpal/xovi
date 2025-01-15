@@ -1,5 +1,7 @@
 .global untrampolineFunction
+.type untrampolineFunction, %function
 .global untrampolineStep2
+.type untrampolineStep2, %function
 
 untrampolineFunction:
     # According to the program, we're in the 'library function'.
@@ -20,14 +22,13 @@ untrampolineFunction:
     ldmfd sp, {r0-r3, r12}
     
     # Now it's safe to jump to the function
-    mov lr, pc
-    ldr pc, [r12]
+    ldr r12, [r12]
+    blx r12
     # Store return value
     str r0, [sp, #16]
     # This is a call - this function will return.
     # Restore the registers we need to make the function a trampoline again
-    ldr r12, [sp]
-    mov r0, r12
+    ldr r0, [sp]
     bl untrampolineFini
     # We can now restore everything
     ldmfd sp!, {r0-r3, r12}
