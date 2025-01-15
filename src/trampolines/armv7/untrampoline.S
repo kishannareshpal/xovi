@@ -3,6 +3,11 @@
 .global untrampolineStep2
 .type untrampolineStep2, %function
 
+.global untrampolineInit
+.type untrampolineInit, %function
+.global untrampolineFini
+.type untrampolineFini, %function
+
 untrampolineFunction:
     # According to the program, we're in the 'library function'.
     # All argument registers should be considered unsafe to work on. They need to be saved
