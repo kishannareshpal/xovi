@@ -31,7 +31,7 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
         return NULL;
     }
 
-    int is_thumb_func = (uintptr_t)symboladdr & 1;
+    int is_thumb_func = (ptrint_t)symboladdr & 1;
 
     struct SymbolData *s = malloc(sizeof(struct SymbolData));
 
