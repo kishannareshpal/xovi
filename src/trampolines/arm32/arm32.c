@@ -7,7 +7,7 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include "../trampolines.h"
-#include "armv7.h"
+#include "arm32.h"
 
 void initCall(struct SymbolData *data) {
     memcpy(data->address, data->beginning_org, ARCHDEP_TRAMPOLINE_LENGTH);

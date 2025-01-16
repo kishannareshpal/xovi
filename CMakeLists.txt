@@ -28,8 +28,8 @@ if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
     target_compile_definitions(xovi PRIVATE AARCH64)
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL armv6l)
     target_sources(xovi PRIVATE
-                  src/trampolines/armv7/armv7.c
-                  src/trampolines/armv7/untrampoline.S
+                  src/trampolines/arm32/arm32.c
+                  src/trampolines/arm32/untrampoline.S
                   )
     target_compile_definitions(xovi PRIVATE ARM)
 else()
