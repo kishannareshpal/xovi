@@ -35,37 +35,28 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
 
     struct SymbolData *s = malloc(sizeof(struct SymbolData));
 
-    uint32_t addr2 = (((unsigned int) newaddr) >> 16) & 0xFFFF;
-    uint32_t addr1 = (((unsigned int) newaddr) >> 0) & 0xFFFF;
-
-    instr_t trampoline[3];
+    instr_t trampoline[2];
 
     if(!is_thumb_func) {
         memcpy(trampoline, (instr_t[]){
-            0xE300C000 | (addr1 & 0xFFF) | ((addr1 & 0xF000) << 4), // MOVW R12
-            0xE340C000 | (addr2 & 0xFFF) | ((addr2 & 0xF000) << 4), // MOVT R12
-            0xE12FFF1C  // BX R12
-        }, 3 * sizeof(instr_t));
+            0xe51ff004,  // ldr pc, [pc, #-4]
+	    (instr_t) newaddr
+        }, 2 * sizeof(instr_t));
     } else {
         memcpy(trampoline, (instr_t[]){
-            0xF8DFC008, // LDR R12, [PC, #8]
-            0x4760BF00, // BX R12; NOP
+            0xf8dff000, // ldr pc, [ pc ]
             (instr_t)newaddr
-        }, 3 * sizeof(instr_t));
+        }, 2 * sizeof(instr_t));
     }
-
-    uint32_t addr2f = (((unsigned int) s) >> 16) & 0xFFFF;
-    uint32_t addr1f = (((unsigned int) s) >> 0) & 0xFFFF;
 
     instr_t s2trampoline[4];
 
     if(!is_thumb_func) {
         memcpy(s2trampoline, (instr_t[]){
-            0xE300C000 | (addr1f & 0xFFF) | ((addr1f & 0xF000) << 4), // MOVW R12, s[0-15]
-            0xE340C000 | (addr2f & 0xFFF) | ((addr2f & 0xF000) << 4), // MOVT R12, s[16-31]
-
-            0xe51ff004, // LDR PC, [PC, #-4]
-            (instr_t)untrampolineStep2 // address loaded by previous instruction, never executed
+            0xe59fc000, // ldr r12, [ pc ]
+            0xe59ff000, // ldr pc, [ pc ]
+            (instr_t) s,
+            (instr_t) untrampolineStep2, // address loaded by previous instruction, never executed
         }, 4 * sizeof(instr_t));
     } else {
         memcpy(s2trampoline, (instr_t[]){
@@ -94,15 +85,6 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
     finiCall(s);
     return s;
 }
-
-#define CALL(x, ...)    ({                                                                      \
-                            init_call(x);                                                       \
-                            unsigned int res =                                        \
-                                ((unsigned int (*)()) x->address)(__VA_ARGS__);       \
-                            fini_call(x);                                                       \
-                            res;                                                                \
-                        })
-
 int untrampolineInit(struct SymbolData *symbol) {
     pthread_mutex_lock(&symbol->mutex);
     initCall(symbol);
@@ -113,15 +95,12 @@ int untrampolineFini(struct SymbolData *symbol) {
 }
 extern void untrampolineFunction(void);
 void generateUntrampoline(void *function, struct SymbolData *symbol, int bytesRemaining) {
-    uint32_t addr2 = (((unsigned int) symbol) >> 16) & 0xFFFF;
-    uint32_t addr1 = (((unsigned int) symbol) >> 0) & 0xFFFF;
 
     instr_t trampoline[] = {
-        0xE300C000 | (addr1 & 0xFFF) | ((addr1 & 0xF000) << 4), // MOVW R12, s[0-15]
-        0xE340C000 | (addr2 & 0xFFF) | ((addr2 & 0xF000) << 4), // MOVT R12, s[16-31]
-
-        0xe51ff004, // LDR PC, [PC, #-4] 
-        (instr_t)untrampolineFunction // address loaded by previous instruction, never executed
+        0xe59fc000, // ldr r12, [ pc ] - this will load pc (this address) + 8 (default ARM behavior.
+        0xe59ff000, // ldr pc, [ pc ] - load the untrampolineFunction's address into PC (switch instr.set if needed)
+        (instr_t) symbol,
+        (instr_t) untrampolineFunction // address loaded by previous instruction, never executed
     };
 
     if(sizeof(trampoline) > bytesRemaining) {
