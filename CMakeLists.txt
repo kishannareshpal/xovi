@@ -26,6 +26,12 @@ if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
                   src/trampolines/aarch64/untrampoline.S
                   )
     target_compile_definitions(xovi PRIVATE AARCH64)
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL armv6l)
+    target_sources(xovi PRIVATE
+                  src/trampolines/arm32/arm32.c
+                  src/trampolines/arm32/untrampoline.S
+                  )
+    target_compile_definitions(xovi PRIVATE ARM)
 else()
     message(FATAL_ERROR "xovi doesn't support '${CMAKE_SYSTEM_PROCESSOR}' architecture")
 endif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
