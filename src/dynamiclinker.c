@@ -55,7 +55,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     if(LINKTABLENAMESptr && LINKTABLEVALUES){
         // Unprotect the memory to prepare it for modifying
         unsigned int elementsCount = *((unsigned int *) LINKTABLEVALUES);
-        mprotect((void *) (((unsigned long long int) LINKTABLEVALUES) & ~0xFFF), 4 * elementsCount, PROT_READ | PROT_WRITE);
+        mprotect((void *) (((uintptr_t) LINKTABLEVALUES) & ~0xFFF), 4 * elementsCount, PROT_READ | PROT_WRITE);
 
         // The first uint32_t of LINKTABLEVALUES is the length.
         LOG("[I]: Pass 1: Found link table at %p\n", LINKTABLENAMESptr);
