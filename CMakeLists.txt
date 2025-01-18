@@ -26,7 +26,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
                   src/trampolines/aarch64/untrampoline.S
                   )
     target_compile_definitions(xovi PRIVATE AARCH64)
-elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL armv6l)
+elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL armv6l OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL arm)
     target_sources(xovi PRIVATE
                   src/trampolines/arm32/arm32.c
                   src/trampolines/arm32/untrampoline.S
