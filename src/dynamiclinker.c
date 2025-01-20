@@ -55,7 +55,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     if(LINKTABLENAMESptr && LINKTABLEVALUES){
         // Unprotect the memory to prepare it for modifying
         unsigned int elementsCount = *((unsigned int *) LINKTABLEVALUES);
-        mprotect((void *) (((ptrint_t) LINKTABLEVALUES) & ~0xFFF), 4 * elementsCount, PROT_READ | PROT_WRITE);
+        mprotect((void *) (((ptrint_t) LINKTABLEVALUES) & ~0xFFF), sizeof(ptrint_t) * (elementsCount + 1) + (((ptrint_t) LINKTABLEVALUES) & 0xFFF), PROT_READ | PROT_WRITE);
 
         // The first uint32_t of LINKTABLEVALUES is the length.
         LOG("[I]: Pass 1: Found link table at %p\n", LINKTABLENAMESptr);
@@ -114,7 +114,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     }
     thisExtension->environment = dlsym(extension, "Environment");
     if(!thisExtension->constructor) {
-        LOG("[W]: Pass 1: Extension %s does not export to receive the Environment handle!\n", baseName);
+        LOG("[W]: Pass 1: Extension %s does not expect to receive the Environment handle!\n", baseName);
     }
 
     struct LinkingPass1Result *check;
