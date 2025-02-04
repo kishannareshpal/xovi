@@ -27,14 +27,7 @@ Right now XOVI expects to see the following directory structure:
 
 ## How to build it?
 
-Right now, XOVI only supports the AARCH64 architecture.
-Since I wrote this program for the reMarkable Paper Pro, that is the only tested configuration.
-
-First, setup your cross-compilation environment. Assuming your toolchain is installed in `~/Tools/remarkable-toolchain`, run
-```sh
-. ~/Tools/remarkable-toolchain/environment-setup-cortexa53-crypto-remarkable-linux
-```
-The toolchain provided by reMarkable will be found by CMake automatically, if your toolchain isn't detected you might need to write a CMake toolchain file.
+Right now, XOVI supports the aarch64 and arm32 architectures. Arm32, however, is still being tested.
 
 To build, run:
 ```sh
