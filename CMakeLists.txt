@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.14)
 project(xovi VERSION 0.1.1 LANGUAGES C ASM)
 
 option(XOVI_SANDBOX "Build a sandbox executable instead of an LD_PRELOAD library." OFF)
+option(XOVI_DEBUG "Enable verbose debugging" OFF)
+option(XOVI_LOAD_FAIL_ABORT "Always terminate the application if an extension fails to load" OFF)
 
 set(XOVI_BASE_SOURCES
    src/main.c
@@ -17,6 +19,14 @@ else()
     add_executable(xovi ${XOVI_BASE_SOURCES})
     target_compile_definitions(xovi PRIVATE DEBUG DEBUGFUNC)
 endif(NOT XOVI_SANDBOX)
+
+if(XOVI_DEBUG)
+    target_compile_definitions(xovi PRIVATE DEBUG)
+endif(XOVI_DEBUG)
+
+if(XOVI_LOAD_FAIL_ABORT)
+    target_compile_definitions(xovi PRIVATE LOAD_FAIL_ABORT)
+endif(XOVI_LOAD_FAIL_ABORT)
 
 target_compile_definitions(xovi PRIVATE _GNU_SOURCE)
 

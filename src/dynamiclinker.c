@@ -11,8 +11,14 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     LOG("[W]: Pass 1: Begin loading extension %s from file %s\n", baseName, extensionSOFile);
     void *extension = dlopen(extensionSOFile, RTLD_NOW);
     if(!extension) {
+#ifdef LOAD_FAIL_ABORT
         LOG_F("[F]: Pass 1: Couldn't load extension:\n%s\n", dlerror());
         exit(1);
+#else
+        LOG("[I]: Pass 1: Failed to load extension:\n%s\n", dlerror());
+        LOG("[I]: Pass 1: Skipping extension %s.\n", baseName);
+        return;
+#endif
     }
     char (*shouldLoad)() = dlsym(extension, "_xovi_shouldLoad");
     if(shouldLoad){
@@ -225,7 +231,7 @@ void requireExtension(hash_t hash, const char *nameFallback, unsigned char major
     struct LinkingPass1Result *soFile;
     const char *thisExtName = nameFallback ? nameFallback : "<Not provided>";
 
-    LOG("[I]: Init: Initializing extension %s(%llx)...\n", thisExtName, hash);
+    LOG("[I]: Init: Initializing extension %s (%llx)...\n", thisExtName, hash);
 
     HASH_FIND_HT(PASS1_RESULTS, &hash, soFile);
     if(soFile == NULL) {
@@ -278,13 +284,11 @@ void unloadPass1Result(struct LinkingPass1Result *currentExtension) {
 
 // PASS 2:
 void loadAllExtensions(struct XoViEnvironment *env){
-    LOG("[I]: Pass 2: Starting pass 2a (override hooking)...\n");
-
     struct LinkingPass1Result *currentExtension;
-    LOG("[I]: Pass 2: Starting pass 2 (conditional loading)...\n");
+    LOG("[I]: Pass 2: Starting pass 2a (conditional loading)...\n");
     bool changesDone = false;
     do {
-        LOG("[I]: Pass 2: Iterating over modules...\n");
+        LOG("[I]: Pass 2a: Iterating over modules...\n");
         changesDone = false;
         struct LinkingPass1Result *tmp;
         HASH_ITER(hh, PASS1_RESULTS, currentExtension, tmp) {
@@ -297,7 +301,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
                 if(currentFunction->type == LP1_F_TYPE_CONDITION){
                     if(resolveImport(currentExtension, currentFunction->functionName, true) == NULL) {
                         // If the function does not exist, delete unload this extension.
-                        LOG("[I]: Condition not met for %s. Unloading...\n", currentExtension->baseName);
+                        LOG("[I]: Pass 2a: Condition not met for %s. Unloading...\n", currentExtension->baseName);
                         unloadPass1Result(currentExtension);
                         // Continue iteration - unload all items that depended on this
                         changesDone = true;
@@ -307,6 +311,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
             }
         }
     } while(changesDone);
+    LOG("[I]: Pass 2: Starting pass 2b (override hooking)...\n");
 
     for(
         currentExtension = PASS1_RESULTS;
@@ -318,14 +323,14 @@ void loadAllExtensions(struct XoViEnvironment *env){
         if(currentExtension->environment) {
             *currentExtension->environment = env;
         }
-        LOG("[I]: Pass 2a: Linking extension %s...\n", currentExtension->baseName);
+        LOG("[I]: Pass 2b: Linking extension %s...\n", currentExtension->baseName);
         struct LinkingPass1SOFunction *currentFunction;
         for(
             currentFunction = *currentExtension->functions;
             currentFunction != NULL;
             currentFunction = currentFunction->hh.next
         ) {
-            LOG("[I]: Pass 2a: Processing function %s... ", currentFunction->functionName);
+            LOG("[I]: Pass 2b: Processing function %s... ", currentFunction->functionName);
             void *resolved;
             switch(currentFunction->type){
                 case LP1_F_TYPE_EXPORT:
@@ -345,7 +350,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
         currentExtension->untrampolineFunctionCache = mmap(NULL, currentExtension->importsCount * ARCHDEP_UNTRAMPOLINE_LENGTH, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, 0, 0);
         currentExtension->populatedUntrampolineFunctions = 0;
     }
-    LOG("[I]: Pass 2: Starting pass 2b (import / export linking)...\n");
+    LOG("[I]: Pass 2: Starting pass 2c (import / export linking)...\n");
     int count = 0;
     for(
         currentExtension = PASS1_RESULTS;
@@ -353,14 +358,14 @@ void loadAllExtensions(struct XoViEnvironment *env){
         currentExtension = currentExtension->hh.next
     ) {
         ++count;
-        LOG("[I]: Pass 2b: Linking extension %s...\n", currentExtension->baseName);
+        LOG("[I]: Pass 2c: Linking extension %s...\n", currentExtension->baseName);
         struct LinkingPass1SOFunction *currentFunction;
         for(
             currentFunction = *currentExtension->functions;
             currentFunction != NULL;
             currentFunction = currentFunction->hh.next
         ) {
-            LOG("[I]: Pass 2b: Processing function %s... ", currentFunction->functionName);
+            LOG("[I]: Pass 2c: Processing function %s... ", currentFunction->functionName);
             void *resolved;
             switch(currentFunction->type){
                 case LP1_F_TYPE_EXPORT:
@@ -370,7 +375,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
                     LOG("Import - Trying to resolve import.\n");
                     resolved = resolveImport(currentExtension, currentFunction->functionName, false);
                     if(!resolved) {
-                        LOG_F("[F]: Pass 2b: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
+                        LOG_F("[F]: Pass 2c: Failed to resolve import %s! Halting.\n", currentFunction->functionName);
                         exit(-1);
                     }
                     *((void **) currentFunction->address) = resolved;
