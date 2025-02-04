@@ -1,4 +1,5 @@
-#include "header.h"
+#include <stdbool.h>
+#include <string.h>
 #include "xovi.h"
 
 bool isDuck(char *string){ // Exports do not need to be marked in any way

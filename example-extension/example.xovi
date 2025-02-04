@@ -1,3 +1,4 @@
+version 0.1.0       ; Self explanatory
 import strdup   ; The file requires an unmodified version of 'strdup'
 export isDuck   ; The file exports a function called 'isDuck'
 override strdup ; The extension will override (hook) strdup
