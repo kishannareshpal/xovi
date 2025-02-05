@@ -253,7 +253,7 @@ def parse_version_string(version_string):
     return tuple(version_tokens)
 
 
-def parse_xovi_file(file_lines):
+def parse_xovi_file(file_lines, architecture):
     header = HeaderState()
     state = ParseState.Default
     metadata_attribution = None
@@ -328,6 +328,14 @@ def parse_xovi_file(file_lines):
                 return None
             split_idx = line.find(' = ')
             name_part = line[:split_idx]
+            if '.' in name_part:
+                # Architecture dependent
+                if architecture is None:
+                    err("This extension requires the -a (--architecture) option! Please set it!")
+                    return None
+                arch_req, name_part = name_part.split('.')
+                if arch_req.lower() != architecture.lower():
+                    continue
             data_part = line[split_idx + 3:]
             if data_part.isdecimal():
                 header.add_metadata_entry_for_entry(metadata_attribution, name_part, MetadataType.Int, data_part)
@@ -348,18 +356,18 @@ def main():
     argparse = ArgumentParser()
     argparse.add_argument('-o', '--output', help="Output xovi module base", required=True)
     argparse.add_argument('-H', '--output-header', help="Output xovi header")
+    argparse.add_argument('-a', '--architecture', help="The architecture for some arch-dependent metadata fields")
     argparse.add_argument('input', help="The .xovi file defining all imports and exports of all the files in this project.")
     args = argparse.parse_args()
 
     with open(args.input, 'r') as definition:
-        header = parse_xovi_file(definition.readlines())
+        header = parse_xovi_file(definition.readlines(), args.architecture)
         if header is None:
             return
 
     if args.output.endswith('cpp'):
         header.lang = "cpp"
 
-    print(header.metadata)
     c, h = header.emit_files()
     with open(args.output, 'w') as output:
         output.write(c)
