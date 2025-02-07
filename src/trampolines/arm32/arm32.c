@@ -24,7 +24,7 @@ void finiCall(struct SymbolData *data) {
 }
 extern void untrampolineStep2(void);
 
-struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
+struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     static int pagesize = 0;
     if(pagesize == 0) pagesize = getpagesize();
     void *symboladdr = dlsym(RTLD_NEXT, symbol);
@@ -81,7 +81,7 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
     s->beginning_trampoline = malloc(ARCHDEP_TRAMPOLINE_LENGTH);
     s->step_2_trampoline = malloc(ARCHDEP_UNTRAMPOLINE_LENGTH);
     // FIXME sets the argument size to a hardcoded value of 4 words, resulting in fast codepath
-    s->argsize = 4;
+    s->argsize = argSize;
     pthread_mutex_init (&s->mutex, NULL);
     mprotect(s->page_address, pagesize, PROT_READ | PROT_EXEC | PROT_WRITE);
     memcpy(s->beginning_trampoline, trampoline, ARCHDEP_TRAMPOLINE_LENGTH);
@@ -118,7 +118,7 @@ void generateUntrampoline(void *function, struct SymbolData *symbol, int bytesRe
     };
 
     if(sizeof(trampoline) > bytesRemaining) {
-        printf("[F]: Fatal error - too little space to generate a trampoline!\n");
+        LOG_F("[F]: Fatal error - too little space to generate a trampoline!\n");
         exit(1);
     }
     memcpy(function, trampoline, sizeof(trampoline));

@@ -3,6 +3,15 @@
 #define XOVI_VERSION "0.2.0"
 #include <stdbool.h>
 
+#define LP1_F_TYPE_EXPORT 1
+#define LP1_F_TYPE_IMPORT 2
+#define LP1_F_TYPE_OVERRIDE 3
+#define LP1_F_TYPE_CONDITION 4
+
+#define METADATA_TYPE_INT 1
+#define METADATA_TYPE_BOOL 2
+#define METADATA_TYPE_STRING 3
+
 typedef union {
     int i;
     bool b;

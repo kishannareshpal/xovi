@@ -10,11 +10,6 @@
 #include "debug.h"
 #include <string.h>
 
-#define LP1_F_TYPE_EXPORT 1
-#define LP1_F_TYPE_IMPORT 2
-#define LP1_F_TYPE_OVERRIDE 3
-#define LP1_F_TYPE_CONDITION 4
-
 #define HASH_ADD_HT(head, keyfield_name, item_ptr) HASH_ADD(hh, head, keyfield_name, sizeof(hash_t), item_ptr)
 #define HASH_FIND_HT(head, hash_ptr, out) HASH_FIND(hh, head, hash_ptr, sizeof(hash_t), out)
 

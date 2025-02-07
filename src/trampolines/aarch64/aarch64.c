@@ -22,8 +22,12 @@ void finiCall(struct SymbolData *data) {
 }
 extern void untrampolineStep2(void);
 
-struct SymbolData *pivotSymbol(const char *symbol, void *newaddr) {
+struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     static int pagesize = 0;
+    if(argSize != -1) {
+        printf("!! TODO: AARCH64 is lacking support for more than 8 arguments / nonstandard cases handled by stack !!\n");
+        return NULL;
+    }
     if(pagesize == 0) pagesize = getpagesize();
     void *symboladdr = dlsym(RTLD_NEXT, symbol);
     if(symboladdr == NULL) {

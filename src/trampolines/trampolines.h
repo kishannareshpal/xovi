@@ -23,4 +23,4 @@ struct SymbolData {
 // - Address of the symbol_data struct
 // - Amount of bytes remaining in buffer.
 void generateUntrampoline(void *function, struct SymbolData *symbol, int bytesRemaining);
-struct SymbolData *pivotSymbol(const char *symbol, void *newaddr);
+struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize);

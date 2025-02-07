@@ -1,5 +1,6 @@
 // Load all extensions the software depends on, but DO NOT LINK yet
 #include "dynamiclinker.h"
+#include "metadata.h"
 
 struct LinkingPass1Result *XOVI_DL_EXTENSIONS = NULL;
 static struct OverrideFunctionTrace *OVERRIDEN_FUNCTIONS = NULL;
@@ -250,7 +251,16 @@ static void defineOverride(char *extensionBaseName, char *symbolName, void *newA
     function->ownerExtensionBaseName = extensionBaseName;
     function->overridenFunctionNameHash = hash;
     LOG("[I]: Pass 2a: Hooking function %s on behalf of extension %s\n", symbolName, extensionBaseName);
-    function->data = pivotSymbol(symbolName, newAddress);
+    int argSize = -1;
+    struct XoviMetadataEntry *argSizeEntry = getMetadataEntryForFunction(extensionBaseName, symbolName, LP1_F_TYPE_OVERRIDE, "$argsize");
+    if(argSizeEntry != NULL) {
+        if(argSizeEntry->type == METADATA_TYPE_INT) {
+            argSize = argSizeEntry->value.i;
+        } else {
+            LOG("[W]: Pass 2a: While hooking function %s: Invalid type for $argsize metadata entry: %d\n", symbolName, extensionBaseName);
+        }
+    }
+    function->data = pivotSymbol(symbolName, newAddress, argSize);
     if(function->data == NULL) {
         LOG_F("[F]: Pass 2a: Failed to hook function!");
         exit(1);
