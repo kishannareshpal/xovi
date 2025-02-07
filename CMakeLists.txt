@@ -9,6 +9,7 @@ set(XOVI_BASE_SOURCES
    src/main.c
    src/dynamiclinker.c
    src/hash.c
+   src/metadata.c
    )
 
 if(NOT XOVI_SANDBOX)
