@@ -1,7 +1,7 @@
 #pragma once
 #include "uthash.h"
 #include "hash.h"
-#include "system.h"
+#include "external.h"
 #include "trampolines/archdepend.h"
 #include "trampolines/trampolines.h"
 #include <dlfcn.h>
@@ -15,11 +15,16 @@
 #define LP1_F_TYPE_OVERRIDE 3
 #define LP1_F_TYPE_CONDITION 4
 
+#define HASH_ADD_HT(head, keyfield_name, item_ptr) HASH_ADD(hh, head, keyfield_name, sizeof(hash_t), item_ptr)
+#define HASH_FIND_HT(head, hash_ptr, out) HASH_FIND(hh, head, hash_ptr, sizeof(hash_t), out)
+
 struct LinkingPass1SOFunction {
     hash_t functionNameHash;
     char *functionName;
     int type;
     void *address;
+    struct XoviMetadataEntry **metadataChain;
+    int metadataLength;
 
     UT_hash_handle hh;
 };
@@ -41,6 +46,10 @@ struct LinkingPass1Result {
     void *handle;
 
     struct SemVer version;
+
+    struct XoviMetadataEntry ***metadataChainRoot;
+    int rootMetadataChainLength;
+    int metadataChainLength;
 
     UT_hash_handle hh;
 };

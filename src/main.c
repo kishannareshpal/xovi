@@ -2,7 +2,8 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include "dynamiclinker.h"
-#include "system.h"
+#include "external.h"
+#include "metadata.h"
 #define XOVI_ROOT "/home/root/xovi/"
 #define EXT_ROOT (XOVI_ROOT "extensions.d/")
 #define FILES_ROOT (XOVI_ROOT "exthome/")
@@ -58,6 +59,20 @@ char *getExtensionDirectory(const char *family){
 void CONSTRUCTOR _ext_init() {
     struct XoViEnvironment *environment = malloc(sizeof(struct XoViEnvironment));
     environment->getExtensionDirectory = getExtensionDirectory;
+
+    // 0.2.0 API:
+    environment->getExtensionCount = getExtensionCount;
+    environment->getExtensionNames = getExtensionNames;
+    environment->getExtensionFunctionCount = getExtensionFunctionCount;
+    environment->getExtensionFunctionNames = getExtensionFunctionNames;
+
+    environment->getMetadataEntriesCountForFunction = getMetadataEntriesCountForFunction;
+    environment->getMetadataChainForFunction = getMetadataChainForFunction;
+    environment->getMetadataEntryForFunction = getMetadataEntryForFunction;
+
+    // Cast required due to differences between the public and private Iterator structure
+    environment->createMetadataSearchingIterator = (void (*)(struct ExtensionMetadataIterator *, const char *)) createMetadataSearchingIterator;
+    environment->nextFunctionMetadataEntry = (struct XoviMetadataEntry *(*)(struct ExtensionMetadataIterator *)) nextFunctionMetadataEntry;
 
     // At this point none of the functions could have been hooked.
     // It's safe to use stdlib.

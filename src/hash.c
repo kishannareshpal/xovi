@@ -1,7 +1,7 @@
 #include "hash.h"
 #include <stdio.h>
 
-hash_t hashString(char *str)
+hash_t hashString(const char *str)
 {
     unsigned long hash = 5381;
     int c;
@@ -12,7 +12,7 @@ hash_t hashString(char *str)
     return hash;
 }
 
-hash_t hashStringS(char *str, hash_t seed)
+hash_t hashStringS(const char *str, hash_t seed)
 {
     unsigned long hash = seed;
     int c;
@@ -23,7 +23,7 @@ hash_t hashStringS(char *str, hash_t seed)
     return hash;
 }
 
-hash_t hashStringL(char *str, int length)
+hash_t hashStringL(const char *str, int length)
 {
     unsigned long hash = 5381;
     int c;

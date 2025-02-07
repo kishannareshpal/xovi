@@ -1,10 +1,18 @@
 // Load all extensions the software depends on, but DO NOT LINK yet
 #include "dynamiclinker.h"
-#define HASH_ADD_HT(head, keyfield_name, item_ptr) HASH_ADD(hh, head, keyfield_name, sizeof(hash_t), item_ptr)
-#define HASH_FIND_HT(head, hash_ptr, out) HASH_FIND(hh, head, hash_ptr, sizeof(hash_t), out)
 
-static struct LinkingPass1Result *PASS1_RESULTS = NULL;
+struct LinkingPass1Result *XOVI_DL_EXTENSIONS = NULL;
 static struct OverrideFunctionTrace *OVERRIDEN_FUNCTIONS = NULL;
+
+int getTerminatedChainLength(void **data, void *terminator){
+    ptrint_t *asInt = (ptrint_t *) data;
+    int i = 0;
+    while(*asInt != (ptrint_t) terminator) {
+        i++;
+        asInt++;
+    }
+    return i;
+}
 
 // baseName needs to be preallocated!
 void loadExtensionPass1(char *extensionSOFile, char *baseName){
@@ -27,7 +35,7 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
             return;
         }
     }
-    // Traverse the link tables, load all functions and dependencies into PASS1_RESULTS
+    // Traverse the link tables, load all functions and dependencies into XOVI_DL_EXTENSIONS
     struct LinkingPass1Result *thisExtension = malloc(sizeof(struct LinkingPass1Result));
     thisExtension->soFileNameRootHash = hashString(baseName);
     thisExtension->functions = malloc(sizeof(void *));
@@ -58,6 +66,20 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
         );
     }
 
+    thisExtension->metadataChainRoot = dlsym(extension, "METADATAVALUES");
+    if(!thisExtension->metadataChainRoot) {
+        LOG("[W]: Pass 1: Extension %s does not export any metadata!\n", baseName);
+        thisExtension->metadataChainLength = -1;
+    } else {
+        struct XoviMetadataEntry ***entry = thisExtension->metadataChainRoot;
+        thisExtension->metadataChainLength = getTerminatedChainLength((void *) entry, (void *) 1);
+        thisExtension->rootMetadataChainLength = 0;
+        if(thisExtension->metadataChainRoot[0]) {
+            thisExtension->rootMetadataChainLength = getTerminatedChainLength((void *) thisExtension->metadataChainRoot[0], NULL);
+        }
+        LOG("[I]: Pass 1: Metadata chain length is %d\n", thisExtension->metadataChainLength);
+    }
+
     if(LINKTABLENAMESptr && LINKTABLEVALUES){
         // Unprotect the memory to prepare it for modifying
         unsigned int elementsCount = *((unsigned int *) LINKTABLEVALUES);
@@ -75,6 +97,16 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
             struct LinkingPass1SOFunction *definition = malloc(sizeof(struct LinkingPass1SOFunction));
             definition->functionNameHash = hashString(LINKTABLENAMES);
             definition->functionName = strdup(LINKTABLENAMES + 1);
+            definition->metadataLength = 0;
+            definition->metadataChain = NULL;
+            if(entryNumber < thisExtension->metadataChainLength) {
+                definition->metadataChain = thisExtension->metadataChainRoot[entryNumber];
+                if(definition->metadataChain) {
+                    definition->metadataLength = getTerminatedChainLength((void *) definition->metadataChain, NULL);
+                } else {
+                    definition->metadataLength = 0;
+                }
+            }
 
             struct LinkingPass1SOFunction *check;
             HASH_FIND_HT(*thisExtension->functions, &definition->functionNameHash, check);
@@ -124,14 +156,13 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     }
 
     struct LinkingPass1Result *check;
-    HASH_FIND_HT(PASS1_RESULTS, &thisExtension->soFileNameRootHash, check);
+    HASH_FIND_HT(XOVI_DL_EXTENSIONS, &thisExtension->soFileNameRootHash, check);
     if(check != NULL){
         LOG_F("[F]: Pass 1: Extension %s has been processed more than once!\n", baseName);
         exit(1);
     }
 
-
-    HASH_ADD_HT(PASS1_RESULTS, soFileNameRootHash, thisExtension);
+    HASH_ADD_HT(XOVI_DL_EXTENSIONS, soFileNameRootHash, thisExtension);
     LOG("[I]: Pass 1: Loaded extension %s from file %s\n", baseName, extensionSOFile);
 }
 
@@ -179,7 +210,7 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         hash_t extensionBaseNameHash = hashStringL(importName, extensionFunctionName - importName);
         extensionFunctionName++; // Skip the '$'.
         struct LinkingPass1Result *dependency;
-        HASH_FIND_HT(PASS1_RESULTS, &extensionBaseNameHash, dependency);
+        HASH_FIND_HT(XOVI_DL_EXTENSIONS, &extensionBaseNameHash, dependency);
         if(dependency == NULL) {
             if(onlyCheck){
                 LOG("[I]: Pass 2b: Extension %s wanted to load function %s - couldn't find extension!\n", extension->baseName, importName);
@@ -233,7 +264,7 @@ void requireExtension(hash_t hash, const char *nameFallback, unsigned char major
 
     LOG("[I]: Init: Initializing extension %s (%llx)...\n", thisExtName, hash);
 
-    HASH_FIND_HT(PASS1_RESULTS, &hash, soFile);
+    HASH_FIND_HT(XOVI_DL_EXTENSIONS, &hash, soFile);
     if(soFile == NULL) {
         // There is no such extension
         LOG_F("[F]: Init: Cannot load extension %s(%llx) - not found!\n", thisExtName, hash);
@@ -270,7 +301,7 @@ void requireExtensionByName(const char *name, unsigned char major, unsigned char
 }
 
 void unloadPass1Result(struct LinkingPass1Result *currentExtension) {
-    HASH_DEL(PASS1_RESULTS, currentExtension);
+    HASH_DEL(XOVI_DL_EXTENSIONS, currentExtension);
     struct LinkingPass1SOFunction *func, *tmp;
     HASH_ITER(hh, *currentExtension->functions, func, tmp) {
         HASH_DEL(*currentExtension->functions, func);
@@ -291,7 +322,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
         LOG("[I]: Pass 2a: Iterating over modules...\n");
         changesDone = false;
         struct LinkingPass1Result *tmp;
-        HASH_ITER(hh, PASS1_RESULTS, currentExtension, tmp) {
+        HASH_ITER(hh, XOVI_DL_EXTENSIONS, currentExtension, tmp) {
             struct LinkingPass1SOFunction *currentFunction;
             for(
                 currentFunction = *currentExtension->functions;
@@ -314,7 +345,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
     LOG("[I]: Pass 2: Starting pass 2b (override hooking)...\n");
 
     for(
-        currentExtension = PASS1_RESULTS;
+        currentExtension = XOVI_DL_EXTENSIONS;
         currentExtension != NULL;
         currentExtension = currentExtension->hh.next
     ) {
@@ -353,7 +384,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
     LOG("[I]: Pass 2: Starting pass 2c (import / export linking)...\n");
     int count = 0;
     for(
-        currentExtension = PASS1_RESULTS;
+        currentExtension = XOVI_DL_EXTENSIONS;
         currentExtension != NULL;
         currentExtension = currentExtension->hh.next
     ) {
@@ -392,7 +423,7 @@ void loadAllExtensions(struct XoViEnvironment *env){
     env->requireExtension = requireExtensionByName;
 
     for(
-        currentExtension = PASS1_RESULTS;
+        currentExtension = XOVI_DL_EXTENSIONS;
         currentExtension != NULL;
         currentExtension = currentExtension->hh.next
     ) {
