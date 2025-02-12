@@ -167,6 +167,14 @@ void loadExtensionPass1(char *extensionSOFile, char *baseName){
     LOG("[I]: Pass 1: Loaded extension %s from file %s\n", baseName, extensionSOFile);
 }
 
+static void *dlsymStandardOrder(const char *sym){
+    void *address = dlsym(RTLD_DEFAULT, sym);
+    if(address == NULL) {
+        address = dlsym(RTLD_NEXT, sym);
+    }
+    return address;
+}
+
 static void *resolveImport(struct LinkingPass1Result *extension, char *importName, bool onlyCheck) {
     // An import can be defined in one of two ways:
     // 1. Standard library, but safe-to-use, never hooked version. (f.ex. $strlen - will be written as 'strlen' (stripped '$'))
@@ -180,7 +188,7 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
         // Has it ever been hooked?
         if(onlyCheck) {
             LOG("check only.\n");
-            return dlsym(RTLD_NEXT, importName);
+            return dlsymStandardOrder(importName);
         }
         hash_t hash = hashString(importName);
         struct OverrideFunctionTrace *function;
@@ -203,7 +211,7 @@ static void *resolveImport(struct LinkingPass1Result *extension, char *importNam
             // No - it is not hooked.
             // Use the system linker
             LOG("untouched.\n");
-            return dlsym(RTLD_NEXT, importName);
+            return dlsymStandardOrder(importName);
         }
     } else {
         LOG("Submodule\n");

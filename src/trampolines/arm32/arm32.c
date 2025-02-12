@@ -27,7 +27,10 @@ extern void untrampolineStep2(void);
 struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     static int pagesize = 0;
     if(pagesize == 0) pagesize = getpagesize();
-    void *symboladdr = dlsym(RTLD_NEXT, symbol);
+    void *symboladdr = dlsym(RTLD_DEFAULT, symbol);
+    if(symboladdr == NULL) {
+        symboladdr = dlsym(RTLD_NEXT, symbol);
+    }
     if(symboladdr == NULL) {
         printf("!! CANNOT FIND %s !!\n", symbol);
         return NULL;
