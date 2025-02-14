@@ -145,7 +145,5 @@ Right now, apart from the race condition mentioned in [Hooks](#hooks), xovi shou
 
 Since the ARM32 code is still quite new, and hasn't been tested as thoroughly as aarch64, it might be less stable.
 
-Due to the lack of viable testing devices, while part of the codebase, THUMB functions' hooking has **NOT** been tested! Please be careful with THUMB functions.
-
 ## Happy hacking!
 #
