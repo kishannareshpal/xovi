@@ -127,8 +127,13 @@ extern void untrampolineStackShift(void);
 void generateUntrampoline(void *function, struct SymbolData *symbol, int bytesRemaining) {
 
     void *untrampoline = untrampolineFunction;
-    if(symbol->argsize > 16) {
+    // argsize uses words.
+    if(symbol->argsize > 4) {
         untrampoline = untrampolineStackShift;
+    }
+    else if(symbol->argsize > 16) {
+        LOG_F("[F]: Fatal error - cannot hook function with argument size above 64 bytes (16 words)!\n");
+        exit(1);
     }
 
     instr_t trampoline[] = {

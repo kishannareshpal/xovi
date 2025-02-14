@@ -78,8 +78,20 @@ Example:
 version 0.1.0       ; Self explanatory
 import strdup       ; The file requires an unmodified version of 'strdup'
 export isDuck       ; The file exports a function called 'isDuck'
-override strdup     ; The extension will override (hook) strdup
+override strdup     ; The extension will override (hook) strdup*
 ```
+
+\* Note: Depending on the architecture, you might need to specify the size of arguments the function takes.
+For example, in order not to corrupt the stack on arm32 targets, if the arguments use more than 4 words, you need to specify it
+in the metadata chains for the overriden function:
+
+```
+override strdup
+with
+    arm32.$argsize = 8 ; 8 words (32 bytes)
+end
+```
+
 
 This code could correspond to the following extension project:
 
@@ -132,8 +144,6 @@ Right now, apart from the race condition mentioned in [Hooks](#hooks), xovi shou
 ### arm32
 
 Since the ARM32 code is still quite new, and hasn't been tested as thoroughly as aarch64, it might be less stable.
-
-As of right now, only methods which take **up to 4 arguments** can be hooked in ARM32. This is due to the calling convention of 32-bit ARM, according to which in order to transfer more than 4 arguments, they should be passed onto the stack. Xovi's current implementation uses the stack internally to process the trampoline code, therefore arguments 5 and above will become corrupted while executing the original code of any hooked method. This is a temporary issue, and at some point will be fixed.
 
 ## Happy hacking!
 #
