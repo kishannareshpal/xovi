@@ -5,8 +5,8 @@ untrampolineFunction:
     # According to the program, we're in the 'library function'.
     # All argument registers should be considered unsafe to work on. They need to be saved
     # Back up X0-X7
-    # In X8 there is our symbol_data structure.
-    # (X9 is the address of this exact function)
+    # In X16 there is our symbol_data structure.
+    # (X17 is the address of this exact function)
 
     # Backup frame pointer and link register:
     stp x29, x30, [sp, -16]!
@@ -14,30 +14,34 @@ untrampolineFunction:
     stp x2, x3, [sp, -16]!
     stp x4, x5, [sp, -16]!
     stp x6, x7, [sp, -16]!
-    # Also backup the info we need to continue
     stp x8, x9, [sp, -16]!
+    # Also backup the info we need to continue
+    stp x16, x17, [sp, -16]!
     # All registers backed up! We can now call the function (re)constructor in C
     # It needs the symbol_data struct ptr
-    mov x0, x8
+    mov x0, x16
     bl untrampolineInit
     # Now it's safe to say all are registers are destroyed
     # Reconstruct...
-    ldp x8, x9, [sp]
-    ldp x6, x7, [sp, #16]
-    ldp x4, x5, [sp, #32]
-    ldp x2, x3, [sp, #48]
-    ldp x0, x1, [sp, #64]
-    # Now it's safe to jump to the function x9
-    ldr x9, [x8]
-    blr x9
+    ldp x16, x17, [sp]
+    ldp x8, x9, [sp, #16]
+    ldp x6, x7, [sp, #32]
+    ldp x4, x5, [sp, #48]
+    ldp x2, x3, [sp, #64]
+    ldp x0, x1, [sp, #80]
+    # Now it's safe to jump to the function x17
+    ldr x17, [x16]
+    blr x17
     # Store return value
     stp x0, x1, [sp, #64]
+    stp x8, x9, [sp, #16]
     # This is a call - this function will return.
     # Restore the registers we need to make the function a trampoline again
-    ldp x8, x9, [sp]
-    mov x0, x8
+    ldp x16, x17, [sp]
+    mov x0, x16
     bl untrampolineFini
     # We can now restore everything except x0
+    ldp x16, x17, [sp], #16
     ldp x8, x9, [sp], #16
     ldp x6, x7, [sp], #16
     ldp x4, x5, [sp], #16

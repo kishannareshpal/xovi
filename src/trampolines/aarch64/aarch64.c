@@ -46,11 +46,11 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     uint32_t addr1 = (((unsigned long long int) newaddr) >> 0) & 0xFFFF;
 
     instr_t trampoline[] = {
-        0xD2800008 | (addr1 << 5), // First mov x8
-        0xF2A00008 | (addr2 << 5), // Second mov x8
-        0xF2C00008 | (addr3 << 5), // Third mov x8
-        0xF2E00008 | (addr4 << 5), // Forth mov x8
-        0xd61f0100 // BR x8
+        0xD2800010 | (addr1 << 5), // First mov x16
+        0xF2A00010 | (addr2 << 5), // Second mov x16
+        0xF2C00010 | (addr3 << 5), // Third mov x16
+        0xF2E00010 | (addr4 << 5), // Forth mov x16
+        0xd61f0200 // BR x16
     };
     addr4 = (((unsigned long long int) untrampolineStep2) >> 48) & 0xFFFF;
     addr3 = (((unsigned long long int) untrampolineStep2) >> 32) & 0xFFFF;
@@ -94,14 +94,6 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     return s;
 }
 
-#define CALL(x, ...)    ({                                                                      \
-                            init_call(x);                                                       \
-                            unsigned long long int res =                                        \
-                                ((unsigned long long int (*)()) x->address)(__VA_ARGS__);       \
-                            fini_call(x);                                                       \
-                            res;                                                                \
-                        })
-
 int untrampolineInit(struct SymbolData *symbol) {
     pthread_mutex_lock(&symbol->mutex);
     initCall(symbol);
@@ -122,16 +114,16 @@ void generateUntrampoline(void *function, struct SymbolData *symbol, int bytesRe
     uint32_t addr1f = (((unsigned long long int) untrampolineFunction) >> 0) & 0xFFFF;
 
     instr_t trampoline[] = {
-        0xD2800008 | (addr1 << 5), // First mov x8
-        0xF2A00008 | (addr2 << 5), // Second mov x8
-        0xF2C00008 | (addr3 << 5), // Third mov x8
-        0xF2E00008 | (addr4 << 5), // Forth mov x8
-        0xD2800009 | (addr1f << 5), // First mov x9
-        0xF2A00009 | (addr2f << 5), // Second mov x9
-        0xF2C00009 | (addr3f << 5), // Third mov x9
-        0xF2E00009 | (addr4f << 5), // Forth mov x9
+        0xD2800010 | (addr1 << 5), // First mov x16
+        0xF2A00010 | (addr2 << 5), // Second mov x16
+        0xF2C00010 | (addr3 << 5), // Third mov x16
+        0xF2E00010 | (addr4 << 5), // Forth mov x16
+        0xD2800011 | (addr1f << 5), // First mov x17
+        0xF2A00011 | (addr2f << 5), // Second mov x17
+        0xF2C00011 | (addr3f << 5), // Third mov x17
+        0xF2E00011 | (addr4f << 5), // Forth mov x17
 
-        0xd61f0120 // BR x9
+        0xd61f0220 // BR x17
     };
 
     if(sizeof(trampoline) > bytesRemaining) {
