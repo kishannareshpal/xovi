@@ -1,3 +1,10 @@
+#ifdef __APPLE__
+    .section __TEXT,__text,regular,pure_instructions
+    .build_version macos, 11, 0
+#else
+    .section .text
+#endif
+
 .extern _untrampolineInit
 .extern _untrampolineFini
 
@@ -94,6 +101,20 @@ _untrampolineStep2:
     isb
     dsb sy
 
+#ifdef __APPLE__
+    # Apple Silicon cache operations
+    bic x17, x17, #0x3F
+    .l3:
+    dc cvau, x17
+    dsb ish
+    ic ivau, x17
+    dsb ish
+    isb sy
+    add x17, x17, #64
+    subs x0, x0, #1
+    bne .l3
+#else
+    # Linux cache operations
     bic x17, x17, #0x3F
     .l3:
     dc cvau, x17
@@ -106,6 +127,8 @@ _untrampolineStep2:
     dsb sy
     subs x0, x0, #1
     bne .l3
+#endif
+
     ldp x0, x2, [sp], #16
     msr nzcv, x0
     ldp x0, x1, [sp], #16

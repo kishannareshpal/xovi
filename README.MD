@@ -34,7 +34,12 @@ To build, run:
 mkdir build
 cd build
 cmake ..
+
+# Linux:
 make -j$(nproc)
+
+# macOS
+make -j$(sysctl -n hw.ncpu)
 ```
 
 For your convenience, prebuilts for the reMarkable Paper Pro are provided in [GitHub Releases](https://github.com/asivery/xovi/releases).
@@ -52,7 +57,7 @@ XOVI iterates over the extensions 4 times, in order to:
 ## Hooks
 
 In order to hook functions, XOVI inserts trampolines at the start of each hooked function.
-For AARCH64, the hook consists of the following assembly code:
+For AARCH64 / arm64, the hook consists of the following assembly code:
 
 ```aarch64
 movx x8, <bits 0-15>
@@ -137,13 +142,13 @@ import? ext$globalf ; Equal to condition ext$globalf..., import ext$globalf...
 
 ## Current issues
 
-### aarch64
+### aarch64 / arm64
 
 Right now, apart from the race condition mentioned in [Hooks](#hooks), xovi should be somewhat stable.
 
 ### arm32
 
-Since the ARM32 code is still quite new, and hasn't been tested as thoroughly as aarch64, it might be less stable.
+Since the ARM32 code is still quite new, and hasn't been tested as thoroughly as aarch64 / arm64, it might be less stable.
 
 ## Happy hacking!
 #

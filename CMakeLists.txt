@@ -16,6 +16,10 @@ if(NOT XOVI_SANDBOX)
     add_library(xovi SHARED ${XOVI_BASE_SOURCES})
     # remove the 'lib' prefix from shared libraries to match existing behavior
     set_target_properties(xovi PROPERTIES PREFIX "")
+    # Force .so extension on macOS
+    if(APPLE)
+        set_target_properties(xovi PROPERTIES SUFFIX ".so")
+    endif()
 else()
     add_executable(xovi ${XOVI_BASE_SOURCES})
     target_compile_definitions(xovi PRIVATE DEBUG DEBUGFUNC)
@@ -31,7 +35,7 @@ endif(XOVI_LOAD_FAIL_ABORT)
 
 target_compile_definitions(xovi PRIVATE _GNU_SOURCE)
 
-if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
+if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64 OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL arm64)
     target_sources(xovi PRIVATE
                   src/trampolines/aarch64/aarch64.c
                   src/trampolines/aarch64/untrampoline.S
@@ -45,4 +49,4 @@ elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL armv6l OR ${CMAKE_SYSTEM_PROCESSOR} ST
     target_compile_definitions(xovi PRIVATE ARM)
 else()
     message(FATAL_ERROR "xovi doesn't support '${CMAKE_SYSTEM_PROCESSOR}' architecture")
-endif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64)
+endif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL aarch64 OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL arm64)

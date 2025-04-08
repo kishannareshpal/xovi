@@ -7,25 +7,38 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 #include "../trampolines.h"
-#include "aarch64.h"
+#include "arm64.h"
+
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/vm_map.h>
+#endif
 
 void initCall(struct SymbolData *data) {
     memcpy(data->address, data->beginning_org, ARCHDEP_TRAMPOLINE_LENGTH);
     memcpy(data->address + ARCHDEP_TRAMPOLINE_LENGTH, data->step_2_trampoline, ARCHDEP_UNTRAMPOLINE_LENGTH);
+#ifdef __APPLE__
+    sys_icache_invalidate(data->address, ARCHDEP_UNTRAMPOLINE_LENGTH + ARCHDEP_TRAMPOLINE_LENGTH);
+#else
     __builtin___clear_cache(data->address, data->address + ARCHDEP_UNTRAMPOLINE_LENGTH + ARCHDEP_TRAMPOLINE_LENGTH);
+#endif
 }
 
 void finiCall(struct SymbolData *data) {
     memcpy(data->address, data->beginning_trampoline, ARCHDEP_TRAMPOLINE_LENGTH);
     memcpy(data->address + ARCHDEP_TRAMPOLINE_LENGTH, data->beginning_org + ARCHDEP_TRAMPOLINE_LENGTH, ARCHDEP_UNTRAMPOLINE_LENGTH);
+#ifdef __APPLE__
+    sys_icache_invalidate(data->address, ARCHDEP_UNTRAMPOLINE_LENGTH + ARCHDEP_TRAMPOLINE_LENGTH);
+#else
     __builtin___clear_cache(data->address, data->address + ARCHDEP_UNTRAMPOLINE_LENGTH + ARCHDEP_TRAMPOLINE_LENGTH);
+#endif
 }
 extern void untrampolineStep2(void);
 
 struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     static int pagesize = 0;
     if(argSize != -1) {
-        printf("!! TODO: AARCH64 is lacking support for more than 8 arguments / nonstandard cases handled by stack !!\n");
+        printf("!! TODO: ARM64 is lacking support for more than 8 arguments / nonstandard cases handled by stack !!\n");
         return NULL;
     }
     if(pagesize == 0) pagesize = getpagesize();
@@ -87,7 +100,13 @@ struct SymbolData *pivotSymbol(const char *symbol, void *newaddr, int argSize) {
     s->beginning_trampoline = malloc(ARCHDEP_TRAMPOLINE_LENGTH);
     s->step_2_trampoline = malloc(ARCHDEP_UNTRAMPOLINE_LENGTH);
     pthread_mutex_init (&s->mutex, NULL);
+
+#ifdef __APPLE__
+    vm_protect(mach_task_self(), (vm_address_t)s->page_address, pagesize, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE);
+#else
     mprotect(s->page_address, pagesize, PROT_READ | PROT_EXEC | PROT_WRITE);
+#endif
+
     memcpy(s->beginning_trampoline, trampoline, ARCHDEP_TRAMPOLINE_LENGTH);
     memcpy(s->step_2_trampoline, s2trampoline, ARCHDEP_UNTRAMPOLINE_LENGTH);
     finiCall(s);
